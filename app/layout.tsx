@@ -19,7 +19,7 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
-  title: "Asterisk AI",
+  title: "ARQUO",
   description: "AI-native UI/UX design workspace.",
 };
 
