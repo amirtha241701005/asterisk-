@@ -160,10 +160,17 @@ function inferComponentType(
   }
 
   if (
+    text.includes("list") ||
+    text.includes("feed") ||
+    text.includes("tasks") ||
+    text.includes("assignments") ||
+    text.includes("projects") ||
+    text.includes("deadlines") ||
+    text.includes("todo") ||
+    text.includes("items") ||
     text.includes("transaction") ||
-    text.includes("recent activity") ||
-    text.includes("activity list") ||
-    text.includes("transaction history")
+    text.includes("activity") ||
+    text.includes("history")
   ) {
     return "list";
   }
@@ -242,8 +249,44 @@ function inferComponentType(
   }
 
   if (
+    text.includes("chart") ||
+    text.includes("graph") ||
+    text.includes("analytics") ||
+    text.includes("metric")
+  ) {
+    return "chart";
+  }
+
+  if (
+    text.includes("grid") ||
+    text.includes("catalog") ||
+    text.includes("products") ||
+    text.includes("gallery")
+  ) {
+    return "grid";
+  }
+
+  if (
+    text.includes("form") ||
+    text.includes("survey") ||
+    text.includes("checkout form")
+  ) {
+    return "form";
+  }
+
+  if (
+    text.includes("dialog") ||
+    text.includes("modal") ||
+    text.includes("sheet") ||
+    text.includes("popup")
+  ) {
+    return "dialog";
+  }
+
+  if (
     text.includes("image") ||
-    text.includes("photo")
+    text.includes("photo") ||
+    text.includes("media")
   ) {
     return "image";
   }
@@ -340,13 +383,14 @@ function wrap(
 /* TRANSACTION SECTION                                                        */
 /* -------------------------------------------------------------------------- */
 
-function TransactionSection({
+function ListSection({
   component,
   items,
   textColor,
   mutedColor,
   surfaceColor,
   primaryColor,
+  accentColor,
   borderColor,
   selectedId,
   onSelect,
@@ -357,10 +401,16 @@ function TransactionSection({
   mutedColor: string;
   surfaceColor: string;
   primaryColor: string;
+  accentColor: string;
   borderColor: string;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
+  const title = stringValue(
+    component.props.title,
+    stringValue(component.name, "Items"),
+  );
+
   return wrap(
     component.id,
     selectedId,
@@ -374,10 +424,7 @@ function TransactionSection({
               color: textColor,
             }}
           >
-            {stringValue(
-              component.props.title,
-              "Recent Transactions",
-            )}
+            {title}
           </h2>
 
           {component.props.subtitle && (
@@ -415,44 +462,41 @@ function TransactionSection({
         }}
       >
         {items.length > 0 ? (
-          items.slice(0, 5).map((item, index) => (
-            <TransactionRow
+          items.map((item, index) => (
+            <ListItemRow
               key={`${itemTitle(item)}-${index}`}
               item={item}
               textColor={textColor}
               mutedColor={mutedColor}
               surfaceColor={surfaceColor}
               primaryColor={primaryColor}
+              accentColor={accentColor}
               borderColor={borderColor}
-              isLast={
-                index ===
-                Math.min(items.length, 5) - 1
-              }
+              isLast={index === items.length - 1}
             />
           ))
         ) : (
           <div
-            className="px-4 py-6 text-center"
+            className="p-6 text-center"
             style={{
               backgroundColor: surfaceColor,
             }}
           >
             <p
-              className="text-[12px] font-medium"
+              className="text-xs font-semibold"
               style={{
                 color: textColor,
               }}
             >
-              No recent transactions
+              {stringValue(component.props.emptyText, "No items available")}
             </p>
-
             <p
               className="mt-1 text-[10px]"
               style={{
                 color: mutedColor,
               }}
             >
-              Your recent activity will appear here.
+              Items will appear here.
             </p>
           </div>
         )}
@@ -635,27 +679,44 @@ function RenderNode({
 
   switch (type) {
     case "container":
-    case "stack":
+    case "stack": {
+      const isRow = props.direction === "row";
+      const gapVal = stringValue(props.gap) || spacing.md;
       return wrap(
         component.id,
         selectedId,
         onSelect,
         <div
-          className="flex flex-col"
+          className={`flex ${isRow ? "flex-row items-center flex-wrap" : "flex-col"} px-5`}
           style={{
-            gap:
-              stringValue(props.gap) ||
-              spacing.md,
-            padding: spacing.md,
-            flexDirection:
-              props.direction === "row"
-                ? "row"
-                : "column",
+            gap: gapVal,
           }}
         >
-          {children}
+          {children && children.length > 0 ? (
+            children
+          ) : props.title || props.subtitle ? (
+            <div
+              className="w-full rounded-2xl border p-4"
+              style={{
+                backgroundColor: surfaceColor,
+                borderColor,
+              }}
+            >
+              {props.title && (
+                <p className="text-[13px] font-semibold" style={{ color: surfaceTextColor }}>
+                  {stringValue(props.title)}
+                </p>
+              )}
+              {props.subtitle && (
+                <p className="mt-1 text-[11px]" style={{ color: mutedColor }}>
+                  {stringValue(props.subtitle)}
+                </p>
+              )}
+            </div>
+          ) : null}
         </div>,
       );
+    }
 
     /* ---------------------------------------------------------------------- */
     /* HEADER                                                                  */
@@ -762,30 +823,35 @@ function RenderNode({
           ? props.items
           : [];
 
-      const isTransactionCard =
+      const isListCard =
         type === "card" &&
         (
+          semanticText.includes("list") ||
+          semanticText.includes("items") ||
+          semanticText.includes("tasks") ||
+          semanticText.includes("assignments") ||
+          semanticText.includes("deadlines") ||
           semanticText.includes("transaction") ||
-          semanticText.includes("recent activity") ||
           semanticText.includes("activity") ||
           semanticText.includes("history")
         );
 
       if (
-        isTransactionCard ||
+        isListCard ||
         (
           cardItems.length > 0 &&
-          semanticText.includes("recent")
+          (semanticText.includes("recent") || semanticText.includes("today") || semanticText.includes("upcoming"))
         )
       ) {
         return (
-          <TransactionSection
+          <ListSection
             component={component}
             items={cardItems}
             textColor={textColor}
             mutedColor={mutedColor}
             surfaceColor={surfaceColor}
             primaryColor={primaryColor}
+            accentColor={accentColor}
             borderColor={borderColor}
             selectedId={selectedId}
             onSelect={onSelect}
@@ -1029,13 +1095,14 @@ function RenderNode({
           : [];
 
       return (
-        <TransactionSection
+        <ListSection
           component={component}
           items={items}
           textColor={textColor}
           mutedColor={mutedColor}
           surfaceColor={surfaceColor}
           primaryColor={primaryColor}
+          accentColor={accentColor}
           borderColor={borderColor}
           selectedId={selectedId}
           onSelect={onSelect}
@@ -1052,6 +1119,14 @@ function RenderNode({
         Array.isArray(props.items)
           ? props.items
           : [];
+      const colCount = Math.max(
+        1,
+        numberValue(
+          props.columns,
+          2,
+        ),
+      );
+      const gapVal = stringValue(props.gap) || spacing.sm;
 
       return wrap(
         component.id,
@@ -1070,24 +1145,16 @@ function RenderNode({
           )}
 
           <div
-            className="grid"
+            className="grid w-full"
             style={{
-              gridTemplateColumns:
-                `repeat(${Math.max(
-                  1,
-                  numberValue(
-                    props.columns,
-                    2,
-                  ),
-                )}, minmax(0, 1fr))`,
-              gap:
-                stringValue(props.gap) ||
-                spacing.sm,
+              gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`,
+              gap: gapVal,
             }}
           >
-            {items
-              .slice(0, 6)
-              .map((item, index) => (
+            {children && children.length > 0 ? (
+              children
+            ) : items.length > 0 ? (
+              items.map((item, index) => (
                 <ActionTile
                   key={`${itemTitle(item)}-${index}`}
                   item={item}
@@ -1097,7 +1164,15 @@ function RenderNode({
                   surfaceColor={surfaceColor}
                   borderColor={borderColor}
                 />
-              ))}
+              ))
+            ) : (
+              <div
+                className="col-span-full rounded-2xl border border-dashed p-4 text-center text-xs"
+                style={{ borderColor, color: mutedColor }}
+              >
+                Grid container
+              </div>
+            )}
           </div>
         </section>,
       );
@@ -1155,6 +1230,14 @@ function RenderNode({
         selectedId,
         onSelect,
         <div className="px-5">
+          {props.label && (
+            <label
+              className="mb-1.5 block text-[11px] font-semibold"
+              style={{ color: textColor }}
+            >
+              {stringValue(props.label)}
+            </label>
+          )}
           <div
             className="flex items-center rounded-2xl border px-4 py-3"
             style={{
@@ -1162,26 +1245,160 @@ function RenderNode({
               borderColor,
             }}
           >
-            <span
-              className="mr-2 text-base"
-              style={{
-                color: mutedColor,
-              }}
-            >
-              ⌕
-            </span>
+            {type === "search" && (
+              <span
+                className="mr-2 text-base"
+                style={{
+                  color: mutedColor,
+                }}
+              >
+                ⌕
+              </span>
+            )}
 
             <span
               className="text-[12px]"
               style={{
-                color: mutedColor,
+                color: props.value ? textColor : mutedColor,
               }}
             >
               {stringValue(
-                props.placeholder,
-                "Search…",
+                props.value,
+                stringValue(
+                  props.placeholder,
+                  type === "search" ? "Search…" : "Enter value…",
+                ),
               )}
             </span>
+          </div>
+        </div>,
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* FORM                                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    case "form":
+      return wrap(
+        component.id,
+        selectedId,
+        onSelect,
+        <form
+          className="mx-5 flex flex-col gap-3 rounded-[24px] border p-4"
+          style={{
+            backgroundColor: surfaceColor,
+            borderColor,
+          }}
+          onSubmit={(e) => e.preventDefault()}
+        >
+          {props.title && (
+            <h3 className="text-[14px] font-bold" style={{ color: surfaceTextColor }}>
+              {stringValue(props.title)}
+            </h3>
+          )}
+          {children && children.length > 0 ? (
+            children
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <div
+                className="rounded-xl border px-3 py-2 text-[11px]"
+                style={{ backgroundColor, borderColor, color: mutedColor }}
+              >
+                {stringValue(props.placeholder, "Input field")}
+              </div>
+              <button
+                type="button"
+                className="w-full rounded-xl py-2 text-[12px] font-semibold text-white"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {stringValue(props.actionText, "Submit")}
+              </button>
+            </div>
+          )}
+        </form>,
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* DIALOG                                                                 */
+    /* ---------------------------------------------------------------------- */
+
+    case "dialog":
+      return wrap(
+        component.id,
+        selectedId,
+        onSelect,
+        <div className="mx-5 rounded-[24px] border p-4 shadow-xl" style={{ backgroundColor: surfaceColor, borderColor }}>
+          <div className="flex items-center justify-between border-b pb-2" style={{ borderColor }}>
+            <h3 className="text-[13px] font-bold" style={{ color: surfaceTextColor }}>
+              {stringValue(props.title, "Dialog")}
+            </h3>
+            <span className="text-[10px] text-white/40">✕</span>
+          </div>
+          <div className="mt-3">
+            {children && children.length > 0 ? (
+              children
+            ) : (
+              <p className="text-[11px] leading-relaxed" style={{ color: mutedColor }}>
+                {stringValue(props.subtitle, stringValue(props.description, "Dialog content and details."))}
+              </p>
+            )}
+          </div>
+          {props.actionText && (
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                className="rounded-xl px-4 py-1.5 text-[11px] font-semibold text-white"
+                style={{ backgroundColor: primaryColor }}
+              >
+                {stringValue(props.actionText)}
+              </button>
+            </div>
+          )}
+        </div>,
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* SELECT / SWITCH / CHECKBOX / RADIO                                     */
+    /* ---------------------------------------------------------------------- */
+
+    case "select":
+      return wrap(
+        component.id,
+        selectedId,
+        onSelect,
+        <div className="px-5">
+          {props.label && (
+            <label className="mb-1 block text-[11px] font-medium" style={{ color: textColor }}>
+              {stringValue(props.label)}
+            </label>
+          )}
+          <div
+            className="flex items-center justify-between rounded-2xl border px-4 py-3 text-[12px]"
+            style={{ backgroundColor: surfaceColor, borderColor, color: textColor }}
+          >
+            <span>{stringValue(props.value, stringValue(props.placeholder, "Select an option…"))}</span>
+            <span className="text-[10px] text-white/50">▼</span>
+          </div>
+        </div>,
+      );
+
+    case "switch":
+    case "checkbox":
+    case "radio":
+      return wrap(
+        component.id,
+        selectedId,
+        onSelect,
+        <div className="mx-5 flex items-center justify-between rounded-xl border p-3" style={{ backgroundColor: surfaceColor, borderColor }}>
+          <span className="text-[12px] font-medium" style={{ color: surfaceTextColor }}>
+            {stringValue(props.label, stringValue(props.title, component.name))}
+          </span>
+          <div
+            className={`h-5 w-9 rounded-full p-0.5 transition-colors ${booleanValue(props.checked, true) ? "bg-violet-600" : "bg-white/20"}`}
+          >
+            <div
+              className={`h-4 w-4 rounded-full bg-white transition-transform ${booleanValue(props.checked, true) ? "translate-x-4" : "translate-x-0"}`}
+            />
           </div>
         </div>,
       );
@@ -1446,7 +1663,7 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* IMAGE                                                                    */
+    /* IMAGE & MEDIA                                                          */
     /* ---------------------------------------------------------------------- */
 
     case "image":
@@ -1457,21 +1674,88 @@ function RenderNode({
         onSelect,
         <div className="px-5">
           <div
-            className="flex h-28 w-full items-center justify-center rounded-2xl"
+            className="relative flex h-36 w-full flex-col items-center justify-center overflow-hidden rounded-2xl border"
             style={{
-              background:
-                `linear-gradient(135deg, ${primaryColor}18, ${accentColor}22)`,
-              color: primaryColor,
+              background: `linear-gradient(135deg, ${primaryColor}15, ${accentColor}25)`,
+              borderColor,
+              color: textColor,
             }}
           >
-            <span className="text-xs font-semibold">
-              {stringValue(
-                props.imageHint,
-                "Image",
-              )}
+            {props.title && (
+              <span className="text-[12px] font-semibold text-white/90">
+                {stringValue(props.title)}
+              </span>
+            )}
+            <span className="mt-1 text-[10px] text-white/60">
+              {stringValue(props.imageHint, stringValue(props.subtitle, "Media Preview"))}
             </span>
+            {props.badge && (
+              <span
+                className="absolute right-3 top-3 rounded-full px-2 py-0.5 text-[9px] font-semibold"
+                style={{ backgroundColor: `${primaryColor}40`, color: "#fff" }}
+              >
+                {stringValue(props.badge)}
+              </span>
+            )}
           </div>
         </div>,
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* CHART                                                                  */
+    /* ---------------------------------------------------------------------- */
+
+    case "chart":
+      return wrap(
+        component.id,
+        selectedId,
+        onSelect,
+        <section
+          className="mx-5 rounded-[22px] border p-4"
+          style={{ backgroundColor: surfaceColor, borderColor }}
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[13px] font-bold" style={{ color: surfaceTextColor }}>
+                {stringValue(props.title, "Analytics")}
+              </h3>
+              {props.subtitle && (
+                <p className="text-[10px]" style={{ color: mutedColor }}>
+                  {stringValue(props.subtitle)}
+                </p>
+              )}
+            </div>
+            {props.badge && (
+              <span
+                className="rounded-full px-2 py-0.5 text-[9px] font-semibold"
+                style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+              >
+                {stringValue(props.badge)}
+              </span>
+            )}
+          </div>
+
+          {/* Stylized sparkline / bar visualization */}
+          <div className="mt-4 flex h-20 items-end justify-between gap-1.5 px-1">
+            {[35, 55, 40, 75, 60, 90, 80].map((val, i) => (
+              <div key={i} className="flex flex-1 flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-t-md transition-all"
+                  style={{
+                    height: `${val}%`,
+                    backgroundColor: i === 5 ? primaryColor : `${primaryColor}35`,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between text-[9px]" style={{ color: mutedColor }}>
+            <span>Mon</span>
+            <span>Wed</span>
+            <span>Fri</span>
+            <span>Sun</span>
+          </div>
+        </section>,
       );
 
     /* ---------------------------------------------------------------------- */
@@ -1539,16 +1823,13 @@ function RenderNode({
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* TRANSACTION ROW                                                            */
-/* -------------------------------------------------------------------------- */
-
-function TransactionRow({
+function ListItemRow({
   item,
   textColor,
   mutedColor,
   surfaceColor,
   primaryColor,
+  accentColor,
   borderColor,
   isLast,
 }: {
@@ -1559,24 +1840,23 @@ function TransactionRow({
   mutedColor: string;
   surfaceColor: string;
   primaryColor: string;
+  accentColor: string;
   borderColor: string;
   isLast: boolean;
 }) {
-  const title =
-    itemTitle(item, "Transaction");
+  const rec = itemRecord(item);
+  const title = itemTitle(item, "Item");
+  const subtitle = itemSubtitle(item);
+  const amount = itemAmount(item);
+  const tag = stringValue(rec.tag) || stringValue(rec.status) || stringValue(rec.badge);
+  const meta = stringValue(rec.meta);
 
-  const subtitle =
-    itemSubtitle(item);
-
-  const amount =
-    itemAmount(item);
-
-  const amountLooksPositive =
-    amount.startsWith("+");
+  const amountLooksPositive = amount.startsWith("+");
+  const amountLooksNegative = amount.startsWith("-");
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-3.5"
+      className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.02]"
       style={{
         backgroundColor: surfaceColor,
         borderBottom: isLast
@@ -1585,30 +1865,38 @@ function TransactionRow({
       }}
     >
       <div
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[11px] font-bold"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[12px] font-bold"
         style={{
-          backgroundColor:
-            amountLooksPositive
-              ? "#DCFCE7"
-              : `${primaryColor}15`,
-          color:
-            amountLooksPositive
-              ? "#15803D"
-              : primaryColor,
+          backgroundColor: `${primaryColor}15`,
+          color: primaryColor,
         }}
       >
         {title.charAt(0).toUpperCase()}
       </div>
 
       <div className="min-w-0 flex-1">
-        <p
-          className="truncate text-[12px] font-semibold"
-          style={{
-            color: textColor,
-          }}
-        >
-          {title}
-        </p>
+        <div className="flex items-center gap-2">
+          <p
+            className="truncate text-[12px] font-semibold"
+            style={{
+              color: textColor,
+            }}
+          >
+            {title}
+          </p>
+
+          {tag && (
+            <span
+              className="shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider"
+              style={{
+                backgroundColor: `${accentColor}18`,
+                color: accentColor,
+              }}
+            >
+              {tag}
+            </span>
+          )}
+        </div>
 
         {subtitle && (
           <p
@@ -1622,19 +1910,29 @@ function TransactionRow({
         )}
       </div>
 
-      {amount && (
+      {amount ? (
         <span
           className="shrink-0 text-[11px] font-semibold"
           style={{
-            color:
-              amountLooksPositive
-                ? "#15803D"
-                : textColor,
+            color: amountLooksPositive
+              ? "#15803D"
+              : amountLooksNegative
+              ? "#DC2626"
+              : textColor,
           }}
         >
           {amount}
         </span>
-      )}
+      ) : meta ? (
+        <span
+          className="shrink-0 text-[10px]"
+          style={{
+            color: mutedColor,
+          }}
+        >
+          {meta}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -1748,6 +2046,11 @@ export function DesignRenderer({
       ? "#0F172A"
       : "#F8FAFC";
 
+  // Check if screen has a single top-level container/grid/stack wrapping the view
+  const hasSingleRootLayout =
+    screen.components.length === 1 &&
+    ["container", "stack", "grid"].includes(screen.components[0].type);
+
   return (
     <div
       className="flex h-full flex-col overflow-hidden"
@@ -1757,9 +2060,22 @@ export function DesignRenderer({
       }}
     >
       <div className="flex-1 overflow-y-auto pb-6">
-        <div className="flex flex-col gap-4">
-          {screen.components.map(
-            (component) => (
+        {hasSingleRootLayout ? (
+          <RenderNode
+            component={screen.components[0]}
+            tokens={tokens}
+            screenState={screen.previewState}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
+        ) : (
+          <div
+            className="flex flex-col"
+            style={{
+              gap: tokens.spacing?.md || "16px",
+            }}
+          >
+            {screen.components.map((component) => (
               <RenderNode
                 key={component.id}
                 component={component}
@@ -1768,9 +2084,9 @@ export function DesignRenderer({
                 selectedId={selectedId}
                 onSelect={onSelect}
               />
-            ),
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

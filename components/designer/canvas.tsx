@@ -7,41 +7,62 @@ import { useDesigner } from "./designer-context";
 export function Canvas() {
   const { zoom, setZoom } = useDesigner();
 
+  const safeZoom = Math.min(200, Math.max(50, zoom));
+
   return (
-    <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(92,70,200,0.16),transparent_55%)]" />
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Canvas glow */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(92,70,200,0.14),transparent_58%)]" />
+
+      {/* Canvas grid */}
       <div
-        className="absolute inset-0 opacity-70"
+        className="pointer-events-none absolute inset-0 opacity-70"
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
           backgroundSize: "32px 32px",
         }}
       />
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden pb-20 pt-8">
-        <div
-          className="origin-center"
-          style={{ transform: `scale(${zoom / 100})` }}
-        >
-          <Artboard />
+
+      {/* Scrollable artboard workspace */}
+      <div className="relative min-h-0 flex-1 overflow-auto overscroll-contain">
+        <div className="flex min-h-full min-w-full items-start justify-center px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-8">
+          <div
+            className="shrink-0 origin-top transition-transform duration-200 ease-out"
+            style={{
+              transform: `scale(${safeZoom / 100})`,
+              marginBottom: `${Math.max(0, safeZoom - 100) * 2}px`,
+            }}
+          >
+            <Artboard />
+          </div>
         </div>
       </div>
-      <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-full border border-white/10 bg-black/40 p-1 backdrop-blur-xl">
+
+      {/* Zoom control */}
+      <div className="absolute right-3 top-3 z-10 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#0a0b16]/85 p-1 shadow-[0_12px_32px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:right-4 sm:top-4">
         <button
           type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-          onClick={() => setZoom(zoom - 10)}
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/8 hover:text-white"
+          onClick={() => setZoom(Math.max(50, zoom - 10))}
           aria-label="Zoom out"
         >
           <Minus size={14} />
         </button>
-        <span className="min-w-[3rem] text-center text-[11px] text-white/70">
-          {zoom}%
-        </span>
+
         <button
           type="button"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 hover:text-white"
-          onClick={() => setZoom(zoom + 10)}
+          className="min-w-[3rem] px-1 text-center text-[11px] text-white/70"
+          onClick={() => setZoom(100)}
+          aria-label="Reset zoom to 100 percent"
+        >
+          {safeZoom}%
+        </button>
+
+        <button
+          type="button"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/8 hover:text-white"
+          onClick={() => setZoom(Math.min(200, zoom + 10))}
           aria-label="Zoom in"
         >
           <Plus size={14} />

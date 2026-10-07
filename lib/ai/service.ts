@@ -37,12 +37,10 @@ export class AiServiceError extends Error {
 /* -------------------------------------------------------------------------- */
 
 const OLLAMA_URL =
-  process.env.OLLAMA_URL?.trim() ||
-  "http://localhost:11434";
+  process.env.OLLAMA_URL?.trim() || "http://localhost:11434";
 
 const OLLAMA_MODEL =
-  process.env.OLLAMA_MODEL?.trim() ||
-  "qwen3.5:4b-q4_K_M";
+  process.env.OLLAMA_MODEL?.trim() || "qwen3.5:4b-q4_K_M";
 
 const OLLAMA_TIMEOUT_MS = 180_000;
 
@@ -55,8 +53,8 @@ function cleanJsonString(raw: string): string {
 
   if (trimmed.startsWith("```")) {
     return trimmed
-      .replace(/^```(?:json)?\s*\n?/, "")
-      .replace(/\n?```\s*$/, "")
+      .replace(/^```(?:json)?\s*/, "")
+      .replace(/\s*```$/, "")
       .trim();
   }
 
@@ -71,61 +69,54 @@ function cleanJsonString(raw: string): string {
 }
 
 /* -------------------------------------------------------------------------- */
-/* DESIGN COMPACTION                                                          */
-/* -------------------------------------------------------------------------- */
-
-/*
- * Qwen 3.5 4B is capable of producing the Asterisk schema, but asking it to
- * generate several large screens with many states/interactions causes it to
- * hit its output limit.
- *
- * For the MVP we deliberately constrain the first generation to one polished
- * screen. Once this works reliably, multi-screen generation can be added
- * through a separate generation step.
- */
-function makeCompactDesignPrompt(
-  promptText: string,
-): string {
-  return `${promptText}
-
-IMPORTANT FINAL OUTPUT CONSTRAINTS FOR THIS LOCAL MODEL:
-
-Generate ONLY ONE polished mobile screen for the requested product.
-
-The screen must still be production-quality and visually rich.
-
-Keep the output compact enough to finish completely.
-
-Requirements:
-- Exactly 1 item in the "screens" array.
-- Maximum 6 components in that screen.
-- Use realistic content.
-- Keep persona concise.
-- Keep userFlow to a maximum of 3 steps.
-- Keep uxReasoning to a maximum of 3 short items.
-- Keep requirements to a maximum of 4 items.
-- Keep designDirection concise.
-- Do not create unnecessary components.
-- Do not create large arrays of repeated data.
-- Do not create multiple variants of the same component.
-- Keep each component's states array to ONE state.
-- Keep interactions arrays empty unless an interaction is essential.
-- Keep props concise.
-- Do not include explanations outside the JSON.
-- Return ONE complete valid JSON object.
-- Make absolutely sure the JSON closes with all required brackets and braces before finishing.
-
-Prioritize a complete valid response over extra detail.`;
-}
-
-/* -------------------------------------------------------------------------- */
 /* OLLAMA                                                                     */
 /* -------------------------------------------------------------------------- */
+
+type CallMode =
+  | "reasoning"
+  | "design"
+  | "refinement"
+  | "quality"
+  | "improvement";
+
+function generationOptions(mode: CallMode) {
+  switch (mode) {
+    case "reasoning":
+      return {
+        temperature: 0.1,
+        num_ctx: 8192,
+        num_predict: 2200,
+      };
+
+    case "quality":
+      return {
+        temperature: 0.1,
+        num_ctx: 8192,
+        num_predict: 2600,
+      };
+
+    case "refinement":
+    case "improvement":
+      return {
+        temperature: 0.15,
+        num_ctx: 12288,
+        num_predict: 7000,
+      };
+
+    case "design":
+    default:
+      return {
+        temperature: 0.15,
+        num_ctx: 16384,
+        num_predict: 6000,
+      };
+  }
+}
 
 async function callOllamaJson(
   promptText: string,
   systemInstruction: string,
-  compactDesign = false,
+  mode: CallMode,
 ): Promise<unknown> {
   const controller = new AbortController();
 
@@ -135,60 +126,35 @@ async function callOllamaJson(
 
   try {
     console.log(
-      `[Asterisk AI] Ollama request: ${OLLAMA_MODEL}`,
+      `[Asterisk AI] Ollama request: ${OLLAMA_MODEL} (${mode})`,
     );
 
-    const finalPrompt = compactDesign
-      ? makeCompactDesignPrompt(promptText)
-      : promptText;
+    const options = generationOptions(mode);
 
-    const response = await fetch(
-      `${OLLAMA_URL}/api/chat`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-
-          messages: [
-            {
-              role: "system",
-              content: systemInstruction,
-            },
-            {
-              role: "user",
-              content: finalPrompt,
-            },
-          ],
-
-          format: "json",
-
-          /*
-           * Disable extended thinking for the MVP.
-           */
-          think: false,
-
-          stream: false,
-
-          /*
-           * A smaller generation budget is intentional.
-           *
-           * We are asking the model for one complete screen rather
-           * than letting it spend several minutes generating a huge
-           * multi-screen JSON document.
-           */
-          options: {
-            temperature: 0.15,
-            num_ctx: 8192,
-            num_predict: 5000,
-          },
-        }),
+    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: systemInstruction,
+          },
+          {
+            role: "user",
+            content: promptText,
+          },
+        ],
+        format: "json",
+        think: false,
+        stream: false,
+        options,
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -221,21 +187,19 @@ async function callOllamaJson(
       data.response ??
       "";
 
-    console.log(
-      "[Asterisk AI] Ollama response received:",
-      {
-        model: OLLAMA_MODEL,
-        hasContent:
-          typeof rawText === "string" &&
-          rawText.trim().length > 0,
-        responseLength:
-          typeof rawText === "string"
-            ? rawText.length
-            : 0,
-        doneReason: data.done_reason,
-        done: data.done,
-      },
-    );
+    console.log("[Asterisk AI] Ollama response received:", {
+      model: OLLAMA_MODEL,
+      mode,
+      hasContent:
+        typeof rawText === "string" &&
+        rawText.trim().length > 0,
+      responseLength:
+        typeof rawText === "string"
+          ? rawText.length
+          : 0,
+      doneReason: data.done_reason,
+      done: data.done,
+    });
 
     if (
       typeof rawText !== "string" ||
@@ -250,14 +214,6 @@ async function callOllamaJson(
 
     const cleaned = cleanJsonString(rawText);
 
-    if (!cleaned.trim()) {
-      throw new AiServiceError(
-        "Ollama returned empty JSON.",
-        502,
-        "EMPTY_JSON_RESPONSE",
-      );
-    }
-
     try {
       return JSON.parse(cleaned);
     } catch (error) {
@@ -265,15 +221,10 @@ async function callOllamaJson(
         "[Asterisk AI] Invalid JSON from Ollama:",
         {
           error,
+          mode,
           doneReason: data.done_reason,
-          responseLength:
-            typeof rawText === "string"
-              ? rawText.length
-              : 0,
-          lastCharacters:
-            typeof rawText === "string"
-              ? rawText.slice(-1000)
-              : "",
+          responseLength: rawText.length,
+          lastCharacters: rawText.slice(-1000),
         },
       );
 
@@ -327,7 +278,8 @@ export async function generateUxReasoning(
 ): Promise<UxReasoning> {
   const raw = await callOllamaJson(
     buildUxReasoningPrompt(userPrompt),
-    "You are Asterisk AI's senior UX strategy engine. Return compact valid JSON only.",
+    "You are ARQUO's senior UX strategy engine. Return compact valid JSON only.",
+    "reasoning",
   );
 
   return raw as UxReasoning;
@@ -346,12 +298,9 @@ export async function generateDesign(
 ): Promise<DesignGenerationOutput> {
   try {
     const raw = await callOllamaJson(
-      buildDesignPrompt(
-        userPrompt,
-        options,
-      ),
-      DESIGN_SYSTEM_PROMPT,
-      true,
+      buildDesignPrompt(userPrompt, options),
+      "You are ARQUO's UI design generator. Return only valid JSON matching the requested schema.",
+      "design",
     );
 
     return validateDesignGenerationOutput(raw);
@@ -385,7 +334,7 @@ export async function refineDesign(
         currentDesign,
       ),
       DESIGN_SYSTEM_PROMPT,
-      true,
+      "refinement",
     );
 
     return validateDesignGenerationOutput(raw);
@@ -413,11 +362,9 @@ export async function evaluateDesignQuality(
   uxReasoning: UxReasoning | null,
 ): Promise<DesignQualityReport> {
   const raw = await callOllamaJson(
-    buildQualityPrompt(
-      design,
-      uxReasoning,
-    ),
-    "You are a design quality reviewer. Return actionable findings as JSON only.",
+    buildQualityPrompt(design, uxReasoning),
+    "You are ARQUO's senior design quality reviewer. Return actionable JSON only.",
+    "quality",
   );
 
   try {
@@ -450,7 +397,7 @@ export async function improveDesign(
         uxReasoning,
       ),
       DESIGN_SYSTEM_PROMPT,
-      true,
+      "improvement",
     );
 
     return validateDesignGenerationOutput(raw);
