@@ -96,53 +96,6 @@ function normalizeReference(source: JsonRecord): InspoReference {
   };
 }
 
-function mergeReference(
-  base: InspoReference,
-  detail: JsonRecord | undefined,
-): InspoReference {
-  if (!detail) return base;
-  const detailReference = normalizeReference(detail);
-
-  return {
-    ...base,
-    ...detailReference,
-    id: base.id,
-    slug: base.slug || detailReference.slug,
-    name: detailReference.name || base.name,
-    palette: detailReference.palette.length
-      ? detailReference.palette
-      : base.palette,
-    typography: detailReference.typography.length
-      ? detailReference.typography
-      : base.typography,
-    components: detailReference.components.length
-      ? detailReference.components
-      : base.components,
-  };
-}
-
-function normalizeDesignSystem(
-  slug: string | undefined,
-  payload: JsonRecord | undefined,
-): InspoDesignSystem | undefined {
-  if (!payload) return undefined;
-  const tokens = isRecord(payload.tokens) ? payload.tokens : payload;
-
-  return {
-    source: slug,
-    colors: cleanList([
-      payload.palette,
-      tokens.palette,
-      tokens.colors,
-      tokens.color,
-    ]),
-    typography: cleanList([payload.fonts, tokens.fonts, tokens.typography]),
-    spacing: cleanList([tokens.spacing, tokens.space]),
-    radius: cleanList([tokens.radius, tokens.radii]),
-    shadows: cleanList([tokens.shadows, tokens.elevation]),
-  };
-}
-
 function normalizeComponents(payload: JsonRecord | undefined): string[] {
   if (!payload) return [];
   const rows = Array.isArray(payload.components)
@@ -220,6 +173,34 @@ function unavailable(query: string, toolsInvoked: string[] = []): InspirationRes
   };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("INSPO_TIMEOUT")), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+function pickBestMatch(references: InspoReference[], query: string): InspoReference[] {
+  if (references.length <= 1) return references;
+  const terms = query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 3);
+  const scored = references.map((reference) => {
+    const hay = `${reference.name} ${reference.macrostructure} ${reference.tone} ${reference.components.join(" ")}`.toLowerCase();
+    const score = terms.reduce((sum, term) => sum + (hay.includes(term) ? 1 : 0), 0);
+    return { reference, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return [scored[0].reference, ...scored.slice(1).map((row) => row.reference)].slice(0, 3);
+}
+
 export async function getInspiration(
   brief: string,
 ): Promise<InspirationResult> {
@@ -233,81 +214,31 @@ export async function getInspiration(
 
   try {
     toolsInvoked.push("recommend");
-    const recommendation = await callInspoTool<JsonRecord>("recommend", {
-      brief: query,
-      device: "mobile",
-      detail: "standard",
-      maxTokens: 4500,
-    });
+    const recommendation = await withTimeout(
+      callInspoTool<JsonRecord>("recommend", {
+        brief: query.slice(0, 900),
+        device: "mobile",
+        detail: "compact",
+        maxTokens: 1800,
+      }),
+      8000,
+    );
 
     const exemplars = Array.isArray(recommendation.exemplars)
       ? recommendation.exemplars.filter(isRecord)
       : [];
-    const initialReferences = exemplars.slice(0, 4).map(normalizeReference);
-
-    const detailedReferences = await Promise.all(
-      initialReferences.map(async (reference) => {
-        if (!reference.slug) return reference;
-        try {
-          toolsInvoked.push("get_screen");
-          const detail = await callInspoTool<JsonRecord>("get_screen", {
-            slug: reference.slug,
-          });
-          return mergeReference(reference, detail);
-        } catch {
-          return reference;
-        }
-      }),
-    );
-
-    const firstSlug = detailedReferences[0]?.slug;
-    let designSystem: InspoDesignSystem | undefined;
-    if (firstSlug) {
-      try {
-        toolsInvoked.push("get_design_system");
-        designSystem = normalizeDesignSystem(
-          firstSlug,
-          await callInspoTool<JsonRecord>("get_design_system", {
-            slug: firstSlug,
-            live: false,
-          }),
-        );
-      } catch {
-        designSystem = undefined;
-      }
-    }
-
-    let componentPatterns: string[] = normalizeComponents(recommendation);
-    try {
-      toolsInvoked.push("find_components");
-      componentPatterns = [
-        ...componentPatterns,
-        ...normalizeComponents(
-          await callInspoTool<JsonRecord>("find_components", {
-            type: "hero",
-            device: "mobile",
-            limit: 4,
-            maxTokens: 1600,
-          }),
-        ),
-      ].slice(0, 8);
-    } catch {
-      // Component patterns are useful, not required.
-    }
-
-    const result: InspirationResult = {
-      available: detailedReferences.length > 0,
+    const references = pickBestMatch(
+      exemplars.slice(0, 5).map(normalizeReference),
       query,
-      references: detailedReferences,
+    );
+    const componentPatterns = normalizeComponents(recommendation);
+    const result: InspirationResult = {
+      available: references.length > 0,
+      query,
+      references,
       components: componentPatterns,
-      designSystem,
-      summary: buildSummary(
-        detailedReferences,
-        designSystem,
-        componentPatterns,
-        recommendation,
-      ),
-      toolsInvoked: Array.from(new Set(toolsInvoked)),
+      summary: buildSummary(references, undefined, componentPatterns, recommendation),
+      toolsInvoked,
     };
 
     cache.set(query, { expires: Date.now() + CACHE_TTL_MS, result });

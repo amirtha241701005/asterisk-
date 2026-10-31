@@ -42,7 +42,7 @@ const OLLAMA_URL =
 const OLLAMA_MODEL =
   process.env.OLLAMA_MODEL?.trim() || "qwen3.5:4b-q4_K_M";
 
-const OLLAMA_TIMEOUT_MS = 180_000;
+const OLLAMA_TIMEOUT_MS = 240_000;
 
 /* -------------------------------------------------------------------------- */
 /* JSON HELPERS                                                               */
@@ -96,10 +96,16 @@ function generationOptions(mode: CallMode) {
       };
 
     case "refinement":
-    case "improvement":
       return {
         temperature: 0.15,
-        num_ctx: 12288,
+        num_ctx: 16384,
+        num_predict: 10000,
+      };
+
+    case "improvement":
+      return {
+        temperature: 0.2,
+        num_ctx: 16384,
         num_predict: 7000,
       };
 
@@ -126,7 +132,7 @@ async function callOllamaJson(
 
   try {
     console.log(
-      `[Asterisk AI] Ollama request: ${OLLAMA_MODEL} (${mode})`,
+      `[ARQUO AI] Ollama request: ${OLLAMA_MODEL} (${mode})`,
     );
 
     const options = generationOptions(mode);
@@ -159,11 +165,7 @@ async function callOllamaJson(
     if (!response.ok) {
       const errorText = await response.text();
 
-      console.error(
-        "[Asterisk AI] Ollama error:",
-        response.status,
-        errorText,
-      );
+      console.error("[ARQUO AI] Ollama error:", response.status, errorText);
 
       throw new AiServiceError(
         `Ollama returned an error (${response.status}). ${errorText}`,
@@ -182,29 +184,18 @@ async function callOllamaJson(
       done?: boolean;
     };
 
-    const rawText =
-      data.message?.content ??
-      data.response ??
-      "";
+    const rawText = data.message?.content ?? data.response ?? "";
 
-    console.log("[Asterisk AI] Ollama response received:", {
+    console.log("[ARQUO AI] Ollama response received:", {
       model: OLLAMA_MODEL,
       mode,
-      hasContent:
-        typeof rawText === "string" &&
-        rawText.trim().length > 0,
-      responseLength:
-        typeof rawText === "string"
-          ? rawText.length
-          : 0,
+      hasContent: typeof rawText === "string" && rawText.trim().length > 0,
+      responseLength: typeof rawText === "string" ? rawText.length : 0,
       doneReason: data.done_reason,
       done: data.done,
     });
 
-    if (
-      typeof rawText !== "string" ||
-      !rawText.trim()
-    ) {
+    if (typeof rawText !== "string" || !rawText.trim()) {
       throw new AiServiceError(
         "Ollama returned an empty response.",
         502,
@@ -217,21 +208,18 @@ async function callOllamaJson(
     try {
       return JSON.parse(cleaned);
     } catch (error) {
-      console.error(
-        "[Asterisk AI] Invalid JSON from Ollama:",
-        {
-          error,
-          mode,
-          doneReason: data.done_reason,
-          responseLength: rawText.length,
-          lastCharacters: rawText.slice(-1000),
-        },
-      );
+      console.error("[ARQUO AI] Invalid JSON from Ollama:", {
+        error,
+        mode,
+        doneReason: data.done_reason,
+        responseLength: rawText.length,
+        lastCharacters: rawText.slice(-1000),
+      });
 
       throw new AiServiceError(
         data.done_reason === "length"
-          ? "The local AI model reached its output limit before completing the design. Please try again."
-          : "Ollama returned invalid JSON.",
+          ? "The local AI model reached its output limit before completing the design. Try a smaller refinement or a model with a larger output capacity."
+          : "Ollama returned invalid JSON. Please try again.",
         502,
         "INVALID_JSON_RESPONSE",
       );
@@ -241,10 +229,7 @@ async function callOllamaJson(
       throw error;
     }
 
-    if (
-      error instanceof Error &&
-      error.name === "AbortError"
-    ) {
+    if (error instanceof Error && error.name === "AbortError") {
       throw new AiServiceError(
         "The local AI model took too long to respond. Please try again.",
         504,
@@ -252,10 +237,7 @@ async function callOllamaJson(
       );
     }
 
-    console.error(
-      "[Asterisk AI] Ollama connection error:",
-      error,
-    );
+    console.error("[ARQUO AI] Ollama connection error:", error);
 
     throw new AiServiceError(
       error instanceof Error
@@ -323,21 +305,168 @@ export async function generateDesign(
 /* DESIGN REFINEMENT                                                          */
 /* -------------------------------------------------------------------------- */
 
+function classifyRefinementInstruction(
+  instruction: string,
+): "targeted" | "visual-redesign" {
+  const text = instruction.toLowerCase();
+
+  const targetedPatterns = [
+    /\bchange only\b/,
+    /\bonly change\b/,
+    /\bkeep everything else\b/,
+    /\bkeep all other\b/,
+    /\bdo not change any other\b/,
+    /\bdo not modify any other\b/,
+    /\bpreserve all\b/,
+    /\bexactly as they are\b/,
+    /\brename\b/,
+    /\bchange the title\b/,
+    /\bchange the heading\b/,
+    /\bchange the text\b/,
+    /\bchange the colour\b/,
+    /\bchange the color\b/,
+    /#[0-9a-f]{6}\b/,
+    /\bmove\b.+\b(before|after|above|below)\b/,
+    /\breorder\b/,
+  ];
+
+  const visualRedesignPatterns = [
+    /\bmake\b.+\b(premium|polished|professional|modern|beautiful|cleaner)\b/,
+    /\bvisual redesign\b/,
+    /\bredesign\b/,
+    /\bvisual polish\b/,
+    /\bimprove (the )?(overall )?(visual|design|appearance|look|styling|hierarchy|spacing|typography)\b/,
+    /\bimprove spacing\b/,
+    /\bimprove typography\b/,
+    /\bcard hierarchy\b/,
+    /\bmore polished\b/,
+    /\bmore premium\b/,
+    /\brefine the overall design\b/,
+    /\bmodernize\b/,
+  ];
+
+  const explicitlyTargeted = targetedPatterns.some((pattern) =>
+    pattern.test(text),
+  );
+
+  const asksForRedesign = visualRedesignPatterns.some((pattern) =>
+    pattern.test(text),
+  );
+
+  if (asksForRedesign && !explicitlyTargeted) {
+    return "visual-redesign";
+  }
+
+  return "targeted";
+}
+
 export async function refineDesign(
   instruction: string,
   currentDesign: DesignGenerationOutput,
 ): Promise<DesignGenerationOutput> {
   try {
+    const refinementMode = classifyRefinementInstruction(instruction);
+
+    const refinementSystemInstruction =
+      refinementMode === "visual-redesign"
+        ? `
+You are ARQUO's senior product designer performing a visual redesign.
+
+The user has asked for meaningful visual improvement, not merely a metadata edit.
+
+Make deliberate, visible improvements to the existing design:
+- establish a clearer hierarchy between screen titles, section headings, cards, and supporting text
+- improve spacing, alignment, density, and rhythm
+- improve typography scale and weight where needed
+- improve card and list styling, surface contrast, borders, and radii
+- improve the balance and consistency of the screen
+- use the existing design system and requested accent colors
+- remove unnecessary decoration when it weakens clarity
+
+Do not merely restate the existing design or make token-only changes.
+
+Preserve the product's domain, content meaning, existing screen IDs, component IDs, screen count, and screen order.
+Keep component order unchanged unless the user's instruction explicitly asks to change it.
+Do not invent unrelated content, metrics, features, or screens.
+Do not change text content unless needed to fix an obvious placeholder or the user explicitly requests it.
+Keep the changes proportional to the request, but make them visually noticeable.
+
+Return the complete updated design as valid JSON only.
+`.trim()
+        : `
+You are ARQUO's precise UI editing engine.
+
+Apply the user's specific edit to the existing design.
+
+Preserve all screen IDs, component IDs, screen count, screen order, and unrelated content.
+Modify only the properties and component order needed to fulfil the request.
+Do not replace existing screens with different screens.
+Do not remove or add components unless the instruction requires it.
+Do not make unrelated visual changes.
+Keep the content consistent with the product domain.
+Return the complete updated design as valid JSON only.
+`.trim();
+
+    console.log("[ARQUO AI] Refinement mode:", refinementMode);
+
     const raw = await callOllamaJson(
-      buildRefinementPrompt(
-        instruction,
-        currentDesign,
-      ),
-      DESIGN_SYSTEM_PROMPT,
+      buildRefinementPrompt(instruction, currentDesign),
+      refinementSystemInstruction,
       "refinement",
     );
 
-    return validateDesignGenerationOutput(raw);
+    const validated = validateDesignGenerationOutput(raw);
+
+    const originalScreenIds = currentDesign.screens.map(
+      (screen) => screen.id,
+    );
+
+    const updatedScreenIds = validated.screens.map(
+      (screen) => screen.id,
+    );
+
+    const sameScreenIds =
+      originalScreenIds.length === updatedScreenIds.length &&
+      originalScreenIds.every(
+        (id, index) => id === updatedScreenIds[index],
+      );
+
+    if (!sameScreenIds) {
+      throw new AiServiceError(
+        "The AI attempted to replace or reorder existing screens. Your original design has not been accepted. Try a smaller refinement.",
+        502,
+        "REFINEMENT_CHANGED_SCREEN_STRUCTURE",
+      );
+    }
+
+    const originalComponentIds = currentDesign.screens.map((screen) =>
+      screen.components.map((component) => component.id).sort(),
+    );
+
+    const updatedComponentIds = validated.screens.map((screen) =>
+      screen.components.map((component) => component.id).sort(),
+    );
+
+    const sameComponentIds =
+      originalComponentIds.length === updatedComponentIds.length &&
+      originalComponentIds.every((originalIds, screenIndex) => {
+        const updatedIds = updatedComponentIds[screenIndex];
+
+        return (
+          originalIds.length === updatedIds.length &&
+          originalIds.every((id, index) => id === updatedIds[index])
+        );
+      });
+
+    if (!sameComponentIds) {
+      throw new AiServiceError(
+        "The AI changed the existing component set unexpectedly. Your original design has not been accepted. Try a more specific refinement.",
+        502,
+        "REFINEMENT_CHANGED_COMPONENT_STRUCTURE",
+      );
+    }
+
+    return validated;
   } catch (error: unknown) {
     if (error instanceof AiServiceError) {
       throw error;
@@ -391,11 +520,7 @@ export async function improveDesign(
 ): Promise<DesignGenerationOutput> {
   try {
     const raw = await callOllamaJson(
-      buildImprovementPrompt(
-        design,
-        findings,
-        uxReasoning,
-      ),
+      buildImprovementPrompt(design, findings, uxReasoning),
       DESIGN_SYSTEM_PROMPT,
       "improvement",
     );

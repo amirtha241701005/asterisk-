@@ -16,6 +16,8 @@ type RenderProps = {
   component: GeneratedComponent;
   tokens: ResolvedTokens;
   screenState?: ComponentStateName;
+  screenTitle?: string;
+  screenTitleComponentId?: string | null;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 };
@@ -378,9 +380,8 @@ function wrap(
     </div>
   );
 }
-
 /* -------------------------------------------------------------------------- */
-/* TRANSACTION SECTION                                                        */
+/* LIST SECTION                                                               */
 /* -------------------------------------------------------------------------- */
 
 function ListSection({
@@ -392,6 +393,8 @@ function ListSection({
   primaryColor,
   accentColor,
   borderColor,
+  spacingValues,
+  cardRadius,
   selectedId,
   onSelect,
 }: {
@@ -403,6 +406,14 @@ function ListSection({
   primaryColor: string;
   accentColor: string;
   borderColor: string;
+  spacingValues: {
+    xs: string;
+    sm: string;
+    md: string;
+    lg: string;
+    xl: string;
+  };
+  cardRadius: string;
   selectedId?: string | null;
   onSelect?: (id: string) => void;
 }) {
@@ -415,14 +426,17 @@ function ListSection({
     component.id,
     selectedId,
     onSelect,
-    <section className="px-5">
+    <section
+      style={{
+        paddingLeft: spacingValues.lg,
+        paddingRight: spacingValues.lg,
+      }}
+    >
       <div className="mb-3 flex items-center justify-between">
         <div>
           <h2
             className="text-[16px] font-bold"
-            style={{
-              color: textColor,
-            }}
+            style={{ color: textColor }}
           >
             {title}
           </h2>
@@ -430,13 +444,9 @@ function ListSection({
           {component.props.subtitle && (
             <p
               className="mt-1 text-[10px]"
-              style={{
-                color: mutedColor,
-              }}
+              style={{ color: mutedColor }}
             >
-              {stringValue(
-                component.props.subtitle,
-              )}
+              {stringValue(component.props.subtitle)}
             </p>
           )}
         </div>
@@ -444,27 +454,24 @@ function ListSection({
         {component.props.actionText && (
           <span
             className="text-[10px] font-semibold"
-            style={{
-              color: primaryColor,
-            }}
+            style={{ color: primaryColor }}
           >
-            {stringValue(
-              component.props.actionText,
-            )}
+            {stringValue(component.props.actionText)}
           </span>
         )}
       </div>
 
       <div
-        className="overflow-hidden rounded-[20px] border"
+        className="overflow-hidden border"
         style={{
           borderColor,
+          borderRadius: cardRadius,
         }}
       >
         {items.length > 0 ? (
           items.map((item, index) => (
             <ListItemRow
-              key={`${itemTitle(item)}-${index}`}
+              key={`list-item-${index}-${itemTitle(item)}`}
               item={item}
               textColor={textColor}
               mutedColor={mutedColor}
@@ -478,23 +485,21 @@ function ListSection({
         ) : (
           <div
             className="p-6 text-center"
-            style={{
-              backgroundColor: surfaceColor,
-            }}
+            style={{ backgroundColor: surfaceColor }}
           >
             <p
               className="text-xs font-semibold"
-              style={{
-                color: textColor,
-              }}
+              style={{ color: textColor }}
             >
-              {stringValue(component.props.emptyText, "No items available")}
+              {stringValue(
+                component.props.emptyText,
+                "No items available",
+              )}
             </p>
+
             <p
               className="mt-1 text-[10px]"
-              style={{
-                color: mutedColor,
-              }}
+              style={{ color: mutedColor }}
             >
               Items will appear here.
             </p>
@@ -513,11 +518,12 @@ function RenderNode({
   component,
   tokens,
   screenState,
+  screenTitle,
+  screenTitleComponentId,
   selectedId,
   onSelect,
 }: RenderProps) {
   const props = component.props || {};
-
   const type = inferComponentType(component);
 
   const state =
@@ -525,60 +531,66 @@ function RenderNode({
     screenState ||
     "default";
 
-  const {
-    colors,
-    spacing,
-  } = tokens;
+  const { colors, spacing, typography, radius } = tokens;
 
+  const fontSizes = {
+    display: typography?.display || "26px",
+    title: typography?.title || "20px",
+    body: typography?.body || "13px",
+    caption: typography?.caption || "11px",
+  };
+
+  const spacingValues = {
+    xs: spacing?.xs || "4px",
+    sm: spacing?.sm || "8px",
+    md: spacing?.md || "16px",
+    lg: spacing?.lg || "24px",
+    xl: spacing?.xl || "32px",
+  };
+
+  const cardRadius = radius || "12px";
   const backgroundColor =
     colors.background || "#F8FAFC";
 
-  const screenIsLight =
-    isLightColor(backgroundColor);
+  const screenIsLight = isLightColor(backgroundColor);
 
-  const textColor =
-    screenIsLight
-      ? "#0F172A"
-      : "#F8FAFC";
+  const textColor = screenIsLight
+    ? "#0F172A"
+    : "#F8FAFC";
 
-  const mutedColor =
-    screenIsLight
-      ? "#64748B"
-      : "#CBD5E1";
+  const mutedColor = screenIsLight
+    ? "#64748B"
+    : "#CBD5E1";
 
   const surfaceColor =
     colors.surface ||
-    (screenIsLight
-      ? "#FFFFFF"
-      : "#172033");
+    (screenIsLight ? "#FFFFFF" : "#172033");
 
-  const surfaceTextColor =
-    isLightColor(surfaceColor)
-      ? "#0F172A"
-      : "#F8FAFC";
+  const surfaceTextColor = isLightColor(surfaceColor)
+    ? "#0F172A"
+    : "#F8FAFC";
 
-  const primaryColor =
-    colors.primary || "#6C5CE7";
+  const primaryColor = colors.primary || "#6C5CE7";
+  const accentColor = colors.accent || primaryColor;
 
-  const accentColor =
-    colors.accent || primaryColor;
+  const borderColor = screenIsLight
+    ? "#E2E8F0"
+    : "#334155";
 
-  const borderColor =
-    screenIsLight
-      ? "#E2E8F0"
-      : "#334155";
-
-  const children =
-    component.children?.map((child) => (
+  const children = component.children?.map(
+    (child, index) => (
       <RenderNode
-        key={child.id}
+        key={`child-${child.id}-${index}`}
         component={child}
         tokens={tokens}
         screenState={screenState}
+        screenTitle={screenTitle}
+        screenTitleComponentId={screenTitleComponentId}
         selectedId={selectedId}
         onSelect={onSelect}
       />
-    ));
+    ),
+  );
 
   /* ------------------------------------------------------------------------ */
   /* STATES                                                                   */
@@ -598,16 +610,11 @@ function RenderNode({
       >
         <div
           className="h-4 w-2/3 animate-pulse rounded-lg"
-          style={{
-            backgroundColor: `${mutedColor}20`,
-          }}
+          style={{ backgroundColor: `${mutedColor}20` }}
         />
-
         <div
           className="mt-3 h-3 w-1/2 animate-pulse rounded-lg"
-          style={{
-            backgroundColor: `${mutedColor}15`,
-          }}
+          style={{ backgroundColor: `${mutedColor}15` }}
         />
       </div>,
     );
@@ -627,16 +634,11 @@ function RenderNode({
       >
         <p
           className="text-sm font-medium"
-          style={{
-            color: surfaceTextColor,
-          }}
+          style={{ color: surfaceTextColor }}
         >
           {stringValue(
             props.emptyText,
-            stringValue(
-              props.title,
-              "Nothing here yet",
-            ),
+            stringValue(props.title, "Nothing here yet"),
           )}
         </p>
       </div>,
@@ -657,16 +659,11 @@ function RenderNode({
       >
         <p
           className="text-sm font-medium"
-          style={{
-            color: "#B91C1C",
-          }}
+          style={{ color: "#B91C1C" }}
         >
           {stringValue(
             props.errorText,
-            stringValue(
-              props.title,
-              "Something went wrong",
-            ),
+            stringValue(props.title, "Something went wrong"),
           )}
         </p>
       </div>,
@@ -682,15 +679,17 @@ function RenderNode({
     case "stack": {
       const isRow = props.direction === "row";
       const gapVal = stringValue(props.gap) || spacing.md;
+
       return wrap(
         component.id,
         selectedId,
         onSelect,
         <div
-          className={`flex ${isRow ? "flex-row items-center flex-wrap" : "flex-col"} px-5`}
-          style={{
-            gap: gapVal,
-          }}
+          className={`flex ${isRow
+            ? "flex-row items-center flex-wrap"
+            : "flex-col"
+            } px-5`}
+          style={{ gap: gapVal }}
         >
           {children && children.length > 0 ? (
             children
@@ -703,12 +702,19 @@ function RenderNode({
               }}
             >
               {props.title && (
-                <p className="text-[13px] font-semibold" style={{ color: surfaceTextColor }}>
+                <p
+                  className="text-[13px] font-semibold"
+                  style={{ color: surfaceTextColor }}
+                >
                   {stringValue(props.title)}
                 </p>
               )}
+
               {props.subtitle && (
-                <p className="mt-1 text-[11px]" style={{ color: mutedColor }}>
+                <p
+                  className="mt-1 text-[11px]"
+                  style={{ color: mutedColor }}
+                >
                   {stringValue(props.subtitle)}
                 </p>
               )}
@@ -719,48 +725,49 @@ function RenderNode({
     }
 
     /* ---------------------------------------------------------------------- */
-    /* HEADER                                                                  */
+    /* HEADER                                                                 */
     /* ---------------------------------------------------------------------- */
 
     case "header":
-    case "heading":
+    case "heading": {
+      const displayedTitle =
+        component.id === screenTitleComponentId
+          ? stringValue(
+            screenTitle,
+            stringValue(props.title, component.name),
+          )
+          : stringValue(props.title, component.name);
+
       return wrap(
         component.id,
         selectedId,
         onSelect,
         <header
-          className="px-5 pb-1 pt-5"
-          style={{
-            backgroundColor,
-          }}
+          className="px-5 pb-2 pt-8"
+          style={{ backgroundColor }}
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
               {props.badge && (
                 <div
                   className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]"
-                  style={{
-                    color: accentColor,
-                  }}
+                  style={{ color: accentColor }}
                 >
                   {stringValue(props.badge)}
                 </div>
               )}
 
               <h1
-                className="truncate"
+                className="whitespace-normal break-words"
                 style={{
                   color: textColor,
-                  fontSize: "24px",
+                  fontSize: fontSizes.display,
                   lineHeight: 1.15,
                   fontWeight: 750,
                   letterSpacing: "-0.025em",
                 }}
               >
-                {stringValue(
-                  props.title,
-                  component.name,
-                )}
+                {displayedTitle}
               </h1>
 
               {props.subtitle && (
@@ -768,43 +775,32 @@ function RenderNode({
                   className="mt-1.5"
                   style={{
                     color: mutedColor,
-                    fontSize: "12px",
+                    fontSize: fontSizes.caption,
                     lineHeight: 1.4,
                   }}
                 >
-                  {stringValue(
-                    props.subtitle,
-                  )}
+                  {stringValue(props.subtitle)}
                 </p>
               )}
             </div>
 
-            {booleanValue(
-              props.showLogo,
-              true,
-            ) && (
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-                  style={{
-                    backgroundColor:
-                      `${primaryColor}15`,
-                    color: primaryColor,
-                  }}
-                >
-                  {stringValue(
-                    props.title,
-                    "N",
-                  )
-                    .charAt(0)
-                    .toUpperCase()}
-                </div>
-              )}
+            {booleanValue(props.showLogo, true) && (
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold"
+                style={{
+                  backgroundColor: `${primaryColor}15`,
+                  color: primaryColor,
+                }}
+              >
+                {displayedTitle.charAt(0).toUpperCase() || "N"}
+              </div>
+            )}
           </div>
         </header>,
       );
-
+    }
     /* ---------------------------------------------------------------------- */
-    /* CARDS                                                                   */
+    /* CARDS                                                                  */
     /* ---------------------------------------------------------------------- */
 
     case "card":
@@ -818,10 +814,9 @@ function RenderNode({
         .join(" ")
         .toLowerCase();
 
-      const cardItems =
-        Array.isArray(props.items)
-          ? props.items
-          : [];
+      const cardItems = Array.isArray(props.items)
+        ? props.items
+        : [];
 
       const isListCard =
         type === "card" &&
@@ -840,7 +835,11 @@ function RenderNode({
         isListCard ||
         (
           cardItems.length > 0 &&
-          (semanticText.includes("recent") || semanticText.includes("today") || semanticText.includes("upcoming"))
+          (
+            semanticText.includes("recent") ||
+            semanticText.includes("today") ||
+            semanticText.includes("upcoming")
+          )
         )
       ) {
         return (
@@ -853,6 +852,8 @@ function RenderNode({
             primaryColor={primaryColor}
             accentColor={accentColor}
             borderColor={borderColor}
+            spacingValues={spacingValues}
+            cardRadius={cardRadius}
             selectedId={selectedId}
             onSelect={onSelect}
           />
@@ -869,19 +870,11 @@ function RenderNode({
         stringValue(props.amount) ||
         stringValue(props.value);
 
-      const currency =
-        stringValue(props.currency);
+      const currency = stringValue(props.currency);
+      const change = stringValue(props.change);
+      const changeLabel = stringValue(props.changeLabel);
 
-      const change =
-        stringValue(props.change);
-
-      const changeLabel =
-        stringValue(props.changeLabel);
-
-      if (
-        isBalanceCard ||
-        type === "hero"
-      ) {
+      if (isBalanceCard || type === "hero") {
         return wrap(
           component.id,
           selectedId,
@@ -890,21 +883,16 @@ function RenderNode({
             className="mx-5 overflow-hidden"
             style={{
               borderRadius: "22px",
-              background:
-                `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
+              background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
               color: "#FFFFFF",
-              boxShadow:
-                "0 12px 30px rgba(37, 99, 235, 0.18)",
+              boxShadow: "0 12px 30px rgba(37, 99, 235, 0.18)",
             }}
           >
             <div className="p-5">
               {props.badge && (
                 <p
                   className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em]"
-                  style={{
-                    color:
-                      "rgba(255,255,255,0.75)",
-                  }}
+                  style={{ color: "rgba(255,255,255,0.75)" }}
                 >
                   {stringValue(props.badge)}
                 </p>
@@ -912,15 +900,9 @@ function RenderNode({
 
               <p
                 className="text-[12px]"
-                style={{
-                  color:
-                    "rgba(255,255,255,0.75)",
-                }}
+                style={{ color: "rgba(255,255,255,0.75)" }}
               >
-                {stringValue(
-                  props.title,
-                  "Total Balance",
-                )}
+                {stringValue(props.title, "Total Balance")}
               </p>
 
               <div className="mt-1 flex items-baseline gap-1">
@@ -938,10 +920,7 @@ function RenderNode({
                 {currency && (
                   <span
                     className="text-[10px]"
-                    style={{
-                      color:
-                        "rgba(255,255,255,0.7)",
-                    }}
+                    style={{ color: "rgba(255,255,255,0.7)" }}
                   >
                     {currency}
                   </span>
@@ -952,10 +931,7 @@ function RenderNode({
                 <div className="mt-3 flex items-center gap-2">
                   <span
                     className="rounded-full px-2 py-1 text-[10px] font-semibold"
-                    style={{
-                      backgroundColor:
-                        "rgba(255,255,255,0.16)",
-                    }}
+                    style={{ backgroundColor: "rgba(255,255,255,0.16)" }}
                   >
                     {change}
                   </span>
@@ -963,10 +939,7 @@ function RenderNode({
                   {changeLabel && (
                     <span
                       className="text-[10px]"
-                      style={{
-                        color:
-                          "rgba(255,255,255,0.75)",
-                      }}
+                      style={{ color: "rgba(255,255,255,0.75)" }}
                     >
                       {changeLabel}
                     </span>
@@ -977,14 +950,9 @@ function RenderNode({
               {props.subtitle && (
                 <p
                   className="mt-3 text-[11px]"
-                  style={{
-                    color:
-                      "rgba(255,255,255,0.72)",
-                  }}
+                  style={{ color: "rgba(255,255,255,0.72)" }}
                 >
-                  {stringValue(
-                    props.subtitle,
-                  )}
+                  {stringValue(props.subtitle)}
                 </p>
               )}
             </div>
@@ -997,18 +965,19 @@ function RenderNode({
         selectedId,
         onSelect,
         <section
-          className="mx-5 rounded-[20px] border p-4"
+          className="mx-5 border"
           style={{
             backgroundColor: surfaceColor,
             borderColor,
+            borderRadius: cardRadius,
+            padding: spacingValues.md,
           }}
         >
           {props.badge && (
             <span
               className="mb-2 inline-flex rounded-full px-2 py-1 text-[9px] font-semibold"
               style={{
-                backgroundColor:
-                  `${accentColor}15`,
+                backgroundColor: `${accentColor}15`,
                 color: accentColor,
               }}
             >
@@ -1018,22 +987,15 @@ function RenderNode({
 
           <h2
             className="text-[15px] font-bold"
-            style={{
-              color: surfaceTextColor,
-            }}
+            style={{ color: surfaceTextColor }}
           >
-            {stringValue(
-              props.title,
-              component.name,
-            )}
+            {stringValue(props.title, component.name)}
           </h2>
 
           {props.subtitle && (
             <p
               className="mt-1.5 text-[11px] leading-5"
-              style={{
-                color: mutedColor,
-              }}
+              style={{ color: mutedColor }}
             >
               {stringValue(props.subtitle)}
             </p>
@@ -1043,7 +1005,7 @@ function RenderNode({
     }
 
     /* ---------------------------------------------------------------------- */
-    /* BUTTON                                                                  */
+    /* BUTTON                                                                 */
     /* ---------------------------------------------------------------------- */
 
     case "button":
@@ -1051,16 +1013,19 @@ function RenderNode({
         component.id,
         selectedId,
         onSelect,
-        <div className="mx-5">
+        <div
+          style={{
+            marginLeft: spacingValues.lg,
+            marginRight: spacingValues.lg,
+          }}
+        >
           <button
             type="button"
             disabled={state === "disabled"}
             className="w-full rounded-2xl py-3.5 text-[13px] font-semibold transition-transform active:scale-[0.98]"
             style={{
               backgroundColor:
-                state === "disabled"
-                  ? "#CBD5E1"
-                  : primaryColor,
+                state === "disabled" ? "#CBD5E1" : primaryColor,
               color: "#FFFFFF",
               boxShadow:
                 state === "disabled"
@@ -1072,11 +1037,7 @@ function RenderNode({
               props.actionText,
               stringValue(
                 props.label,
-                stringValue(
-                  props.title,
-                  component.name ||
-                  "Continue",
-                ),
+                stringValue(props.title, component.name || "Continue"),
               ),
             )}
           </button>
@@ -1084,15 +1045,14 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* LIST                                                                     */
+    /* LIST                                                                    */
     /* ---------------------------------------------------------------------- */
 
     case "list":
     case "feed": {
-      const items =
-        Array.isArray(props.items)
-          ? props.items
-          : [];
+      const items = Array.isArray(props.items)
+        ? props.items
+        : [];
 
       return (
         <ListSection
@@ -1104,6 +1064,8 @@ function RenderNode({
           primaryColor={primaryColor}
           accentColor={accentColor}
           borderColor={borderColor}
+          spacingValues={spacingValues}
+          cardRadius={cardRadius}
           selectedId={selectedId}
           onSelect={onSelect}
         />
@@ -1111,21 +1073,19 @@ function RenderNode({
     }
 
     /* ---------------------------------------------------------------------- */
-    /* GRID                                                                     */
+    /* GRID                                                                   */
     /* ---------------------------------------------------------------------- */
 
     case "grid": {
-      const items =
-        Array.isArray(props.items)
-          ? props.items
-          : [];
+      const items = Array.isArray(props.items)
+        ? props.items
+        : [];
+
       const colCount = Math.max(
         1,
-        numberValue(
-          props.columns,
-          2,
-        ),
+        numberValue(props.columns, 2),
       );
+
       const gapVal = stringValue(props.gap) || spacing.sm;
 
       return wrap(
@@ -1136,9 +1096,7 @@ function RenderNode({
           {props.title && (
             <h2
               className="mb-3 text-[15px] font-bold"
-              style={{
-                color: textColor,
-              }}
+              style={{ color: textColor }}
             >
               {stringValue(props.title)}
             </h2>
@@ -1156,7 +1114,7 @@ function RenderNode({
             ) : items.length > 0 ? (
               items.map((item, index) => (
                 <ActionTile
-                  key={`${itemTitle(item)}-${index}`}
+                  key={`grid-item-${index}-${itemTitle(item)}`}
                   item={item}
                   primaryColor={primaryColor}
                   textColor={textColor}
@@ -1177,9 +1135,8 @@ function RenderNode({
         </section>,
       );
     }
-
     /* ---------------------------------------------------------------------- */
-    /* TEXT                                                                     */
+    /* TEXT                                                                   */
     /* ---------------------------------------------------------------------- */
 
     case "text":
@@ -1191,18 +1148,9 @@ function RenderNode({
         <p
           className="px-5"
           style={{
-            color:
-              type === "link"
-                ? primaryColor
-                : mutedColor,
-            fontSize:
-              type === "link"
-                ? "12px"
-                : "11px",
-            fontWeight:
-              type === "link"
-                ? 600
-                : 400,
+            color: type === "link" ? primaryColor : mutedColor,
+            fontSize: type === "link" ? fontSizes.body : fontSizes.caption,
+            fontWeight: type === "link" ? 600 : 400,
             lineHeight: 1.5,
           }}
         >
@@ -1210,17 +1158,14 @@ function RenderNode({
             props.title,
             stringValue(
               props.label,
-              stringValue(
-                props.subtitle,
-                component.name,
-              ),
+              stringValue(props.subtitle, component.name),
             ),
           )}
         </p>,
       );
 
     /* ---------------------------------------------------------------------- */
-    /* SEARCH / INPUT                                                          */
+    /* SEARCH / INPUT                                                         */
     /* ---------------------------------------------------------------------- */
 
     case "search":
@@ -1238,6 +1183,7 @@ function RenderNode({
               {stringValue(props.label)}
             </label>
           )}
+
           <div
             className="flex items-center rounded-2xl border px-4 py-3"
             style={{
@@ -1248,9 +1194,7 @@ function RenderNode({
             {type === "search" && (
               <span
                 className="mr-2 text-base"
-                style={{
-                  color: mutedColor,
-                }}
+                style={{ color: mutedColor }}
               >
                 ⌕
               </span>
@@ -1258,9 +1202,7 @@ function RenderNode({
 
             <span
               className="text-[12px]"
-              style={{
-                color: props.value ? textColor : mutedColor,
-              }}
+              style={{ color: props.value ? textColor : mutedColor }}
             >
               {stringValue(
                 props.value,
@@ -1289,23 +1231,32 @@ function RenderNode({
             backgroundColor: surfaceColor,
             borderColor,
           }}
-          onSubmit={(e) => e.preventDefault()}
+          onSubmit={(event) => event.preventDefault()}
         >
           {props.title && (
-            <h3 className="text-[14px] font-bold" style={{ color: surfaceTextColor }}>
+            <h3
+              className="text-[14px] font-bold"
+              style={{ color: surfaceTextColor }}
+            >
               {stringValue(props.title)}
             </h3>
           )}
+
           {children && children.length > 0 ? (
             children
           ) : (
             <div className="flex flex-col gap-2.5">
               <div
                 className="rounded-xl border px-3 py-2 text-[11px]"
-                style={{ backgroundColor, borderColor, color: mutedColor }}
+                style={{
+                  backgroundColor,
+                  borderColor,
+                  color: mutedColor,
+                }}
               >
                 {stringValue(props.placeholder, "Input field")}
               </div>
+
               <button
                 type="button"
                 className="w-full rounded-xl py-2 text-[12px] font-semibold text-white"
@@ -1327,22 +1278,43 @@ function RenderNode({
         component.id,
         selectedId,
         onSelect,
-        <div className="mx-5 rounded-[24px] border p-4 shadow-xl" style={{ backgroundColor: surfaceColor, borderColor }}>
-          <div className="flex items-center justify-between border-b pb-2" style={{ borderColor }}>
-            <h3 className="text-[13px] font-bold" style={{ color: surfaceTextColor }}>
+        <div
+          className="mx-5 rounded-[24px] border p-4 shadow-xl"
+          style={{
+            backgroundColor: surfaceColor,
+            borderColor,
+          }}
+        >
+          <div
+            className="flex items-center justify-between border-b pb-2"
+            style={{ borderColor }}
+          >
+            <h3
+              className="text-[13px] font-bold"
+              style={{ color: surfaceTextColor }}
+            >
               {stringValue(props.title, "Dialog")}
             </h3>
+
             <span className="text-[10px] text-white/40">✕</span>
           </div>
+
           <div className="mt-3">
             {children && children.length > 0 ? (
               children
             ) : (
-              <p className="text-[11px] leading-relaxed" style={{ color: mutedColor }}>
-                {stringValue(props.subtitle, stringValue(props.description, "Dialog content and details."))}
+              <p
+                className="text-[11px] leading-relaxed"
+                style={{ color: mutedColor }}
+              >
+                {stringValue(
+                  props.subtitle,
+                  stringValue(props.description, "Dialog content and details."),
+                )}
               </p>
             )}
           </div>
+
           {props.actionText && (
             <div className="mt-3 flex justify-end">
               <button
@@ -1358,7 +1330,7 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* SELECT / SWITCH / CHECKBOX / RADIO                                     */
+    /* SELECT / SWITCH / CHECKBOX / RADIO                                    */
     /* ---------------------------------------------------------------------- */
 
     case "select":
@@ -1368,15 +1340,29 @@ function RenderNode({
         onSelect,
         <div className="px-5">
           {props.label && (
-            <label className="mb-1 block text-[11px] font-medium" style={{ color: textColor }}>
+            <label
+              className="mb-1 block text-[11px] font-medium"
+              style={{ color: textColor }}
+            >
               {stringValue(props.label)}
             </label>
           )}
+
           <div
             className="flex items-center justify-between rounded-2xl border px-4 py-3 text-[12px]"
-            style={{ backgroundColor: surfaceColor, borderColor, color: textColor }}
+            style={{
+              backgroundColor: surfaceColor,
+              borderColor,
+              color: textColor,
+            }}
           >
-            <span>{stringValue(props.value, stringValue(props.placeholder, "Select an option…"))}</span>
+            <span>
+              {stringValue(
+                props.value,
+                stringValue(props.placeholder, "Select an option…"),
+              )}
+            </span>
+
             <span className="text-[10px] text-white/50">▼</span>
           </div>
         </div>,
@@ -1384,27 +1370,47 @@ function RenderNode({
 
     case "switch":
     case "checkbox":
-    case "radio":
+    case "radio": {
+      const checked = booleanValue(props.checked, true);
+
       return wrap(
         component.id,
         selectedId,
         onSelect,
-        <div className="mx-5 flex items-center justify-between rounded-xl border p-3" style={{ backgroundColor: surfaceColor, borderColor }}>
-          <span className="text-[12px] font-medium" style={{ color: surfaceTextColor }}>
-            {stringValue(props.label, stringValue(props.title, component.name))}
+        <div
+          className="mx-5 flex items-center justify-between rounded-xl border p-3"
+          style={{
+            backgroundColor: surfaceColor,
+            borderColor,
+          }}
+        >
+          <span
+            className="text-[12px] font-medium"
+            style={{ color: surfaceTextColor }}
+          >
+            {stringValue(
+              props.label,
+              stringValue(props.title, component.name),
+            )}
           </span>
+
           <div
-            className={`h-5 w-9 rounded-full p-0.5 transition-colors ${booleanValue(props.checked, true) ? "bg-violet-600" : "bg-white/20"}`}
+            className="h-5 w-9 rounded-full p-0.5 transition-colors"
+            style={{
+              backgroundColor: checked ? primaryColor : "#CBD5E1",
+            }}
           >
             <div
-              className={`h-4 w-4 rounded-full bg-white transition-transform ${booleanValue(props.checked, true) ? "translate-x-4" : "translate-x-0"}`}
+              className={`h-4 w-4 rounded-full bg-white transition-transform ${checked ? "translate-x-4" : "translate-x-0"
+                }`}
             />
           </div>
         </div>,
       );
+    }
 
     /* ---------------------------------------------------------------------- */
-    /* TABS                                                                     */
+    /* TABS                                                                   */
     /* ---------------------------------------------------------------------- */
 
     case "tabs":
@@ -1419,30 +1425,17 @@ function RenderNode({
               ? props.tabs
               : Array.isArray(props.categories)
                 ? props.categories
-                : [
-                  "Overview",
-                  "Activity",
-                  "Insights",
-                ]
+                : ["Overview", "Activity", "Insights"]
           )
             .slice(0, 5)
             .map((tab, index) => (
               <span
-                key={`${stringValue(tab)}-${index}`}
+                key={`tab-${index}-${stringValue(tab)}`}
                 className="shrink-0 rounded-full px-3 py-1.5 text-[10px] font-semibold"
                 style={{
-                  backgroundColor:
-                    index === 0
-                      ? primaryColor
-                      : surfaceColor,
-                  color:
-                    index === 0
-                      ? "#FFFFFF"
-                      : surfaceTextColor,
-                  border:
-                    index === 0
-                      ? "none"
-                      : `1px solid ${borderColor}`,
+                  backgroundColor: index === 0 ? primaryColor : surfaceColor,
+                  color: index === 0 ? "#FFFFFF" : surfaceTextColor,
+                  border: index === 0 ? "none" : `1px solid ${borderColor}`,
                 }}
               >
                 {stringValue(tab)}
@@ -1450,9 +1443,8 @@ function RenderNode({
             ))}
         </div>,
       );
-
     /* ---------------------------------------------------------------------- */
-    /* NAVIGATION                                                              */
+    /* NAVIGATION                                                             */
     /* ---------------------------------------------------------------------- */
 
     case "navigation":
@@ -1471,23 +1463,15 @@ function RenderNode({
           {(
             Array.isArray(props.tabs)
               ? props.tabs
-              : [
-                "Home",
-                "Activity",
-                "Insights",
-                "Profile",
-              ]
+              : ["Home", "Activity", "Insights", "Profile"]
           )
             .slice(0, 5)
             .map((tab, index) => (
               <span
-                key={`${stringValue(tab)}-${index}`}
+                key={`nav-${index}-${stringValue(tab)}`}
                 className="text-center text-[10px] font-semibold"
                 style={{
-                  color:
-                    index === 0
-                      ? primaryColor
-                      : mutedColor,
+                  color: index === 0 ? primaryColor : mutedColor,
                 }}
               >
                 {stringValue(tab)}
@@ -1497,7 +1481,7 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* BADGE                                                                    */
+    /* BADGE                                                                  */
     /* ---------------------------------------------------------------------- */
 
     case "badge":
@@ -1508,23 +1492,19 @@ function RenderNode({
         <span
           className="inline-flex rounded-full px-2.5 py-1 text-[10px] font-semibold"
           style={{
-            backgroundColor:
-              `${accentColor}18`,
+            backgroundColor: `${accentColor}18`,
             color: accentColor,
           }}
         >
           {stringValue(
             props.badge,
-            stringValue(
-              props.label,
-              component.name,
-            ),
+            stringValue(props.label, component.name),
           )}
         </span>,
       );
 
     /* ---------------------------------------------------------------------- */
-    /* ALERT                                                                    */
+    /* ALERT                                                                  */
     /* ---------------------------------------------------------------------- */
 
     case "alert":
@@ -1541,23 +1521,18 @@ function RenderNode({
         >
           <p
             className="text-[12px] font-semibold"
-            style={{
-              color: "#1E40AF",
-            }}
+            style={{ color: "#1E40AF" }}
           >
             {stringValue(
               props.title,
-              stringValue(
-                props.message,
-                "Notice",
-              ),
+              stringValue(props.message, "Notice"),
             )}
           </p>
         </div>,
       );
 
     /* ---------------------------------------------------------------------- */
-    /* PROGRESS                                                                 */
+    /* PROGRESS                                                               */
     /* ---------------------------------------------------------------------- */
 
     case "progress":
@@ -1570,47 +1545,30 @@ function RenderNode({
             <div className="mb-2 flex justify-between">
               <span
                 className="text-[11px] font-semibold"
-                style={{
-                  color: textColor,
-                }}
+                style={{ color: textColor }}
               >
                 {stringValue(props.title)}
               </span>
 
               <span
                 className="text-[10px]"
-                style={{
-                  color: mutedColor,
-                }}
+                style={{ color: mutedColor }}
               >
-                {numberValue(
-                  props.progress,
-                  60,
-                )}
-                %
+                {numberValue(props.progress, 60)}%
               </span>
             </div>
           )}
 
           <div
             className="h-2 overflow-hidden rounded-full"
-            style={{
-              backgroundColor:
-                `${mutedColor}20`,
-            }}
+            style={{ backgroundColor: `${mutedColor}20` }}
           >
             <div
               className="h-full rounded-full"
               style={{
                 width: `${Math.min(
                   100,
-                  Math.max(
-                    0,
-                    numberValue(
-                      props.progress,
-                      60,
-                    ),
-                  ),
+                  Math.max(0, numberValue(props.progress, 60)),
                 )}%`,
                 backgroundColor: primaryColor,
               }}
@@ -1620,7 +1578,7 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* DIVIDER                                                                  */
+    /* DIVIDER                                                                */
     /* ---------------------------------------------------------------------- */
 
     case "divider":
@@ -1630,14 +1588,12 @@ function RenderNode({
         onSelect,
         <div
           className="mx-5 h-px"
-          style={{
-            backgroundColor: borderColor,
-          }}
+          style={{ backgroundColor: borderColor }}
         />,
       );
 
     /* ---------------------------------------------------------------------- */
-    /* AVATAR                                                                   */
+    /* AVATAR                                                                 */
     /* ---------------------------------------------------------------------- */
 
     case "avatar":
@@ -1648,17 +1604,11 @@ function RenderNode({
         <div
           className="mx-5 flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold"
           style={{
-            backgroundColor:
-              `${primaryColor}15`,
+            backgroundColor: `${primaryColor}15`,
             color: primaryColor,
           }}
         >
-          {stringValue(
-            props.title,
-            "N",
-          )
-            .charAt(0)
-            .toUpperCase()}
+          {stringValue(props.title, "N").charAt(0).toUpperCase()}
         </div>,
       );
 
@@ -1686,13 +1636,21 @@ function RenderNode({
                 {stringValue(props.title)}
               </span>
             )}
+
             <span className="mt-1 text-[10px] text-white/60">
-              {stringValue(props.imageHint, stringValue(props.subtitle, "Media Preview"))}
+              {stringValue(
+                props.imageHint,
+                stringValue(props.subtitle, "Media Preview"),
+              )}
             </span>
+
             {props.badge && (
               <span
                 className="absolute right-3 top-3 rounded-full px-2 py-0.5 text-[9px] font-semibold"
-                style={{ backgroundColor: `${primaryColor}40`, color: "#fff" }}
+                style={{
+                  backgroundColor: `${primaryColor}40`,
+                  color: "#fff",
+                }}
               >
                 {stringValue(props.badge)}
               </span>
@@ -1712,44 +1670,65 @@ function RenderNode({
         onSelect,
         <section
           className="mx-5 rounded-[22px] border p-4"
-          style={{ backgroundColor: surfaceColor, borderColor }}
+          style={{
+            backgroundColor: surfaceColor,
+            borderColor,
+          }}
         >
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-[13px] font-bold" style={{ color: surfaceTextColor }}>
+              <h3
+                className="text-[13px] font-bold"
+                style={{ color: surfaceTextColor }}
+              >
                 {stringValue(props.title, "Analytics")}
               </h3>
+
               {props.subtitle && (
-                <p className="text-[10px]" style={{ color: mutedColor }}>
+                <p
+                  className="text-[10px]"
+                  style={{ color: mutedColor }}
+                >
                   {stringValue(props.subtitle)}
                 </p>
               )}
             </div>
+
             {props.badge && (
               <span
                 className="rounded-full px-2 py-0.5 text-[9px] font-semibold"
-                style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+                style={{
+                  backgroundColor: `${primaryColor}15`,
+                  color: primaryColor,
+                }}
               >
                 {stringValue(props.badge)}
               </span>
             )}
           </div>
 
-          {/* Stylized sparkline / bar visualization */}
-          <div className="mt-4 flex h-20 items-end justify-between gap-1.5 px-1">
-            {[35, 55, 40, 75, 60, 90, 80].map((val, i) => (
-              <div key={i} className="flex flex-1 flex-col items-center gap-1">
+          <div className="mt-4 flex h-32 items-end justify-between gap-2 px-1">
+            {[35, 55, 40, 75, 60, 90, 80].map((val, index) => (
+              <div
+                key={`chart-bar-${index}`}
+                className="flex h-full flex-1 flex-col items-center justify-end gap-1"
+              >
                 <div
                   className="w-full rounded-t-md transition-all"
                   style={{
                     height: `${val}%`,
-                    backgroundColor: i === 5 ? primaryColor : `${primaryColor}35`,
+                    backgroundColor:
+                      index === 5 ? primaryColor : `${primaryColor}35`,
                   }}
                 />
               </div>
             ))}
           </div>
-          <div className="mt-2 flex justify-between text-[9px]" style={{ color: mutedColor }}>
+
+          <div
+            className="mt-2 flex justify-between text-[9px]"
+            style={{ color: mutedColor }}
+          >
             <span>Mon</span>
             <span>Wed</span>
             <span>Fri</span>
@@ -1759,45 +1738,34 @@ function RenderNode({
       );
 
     /* ---------------------------------------------------------------------- */
-    /* CUSTOM / UNKNOWN                                                        */
+    /* CUSTOM / UNKNOWN                                                       */
     /* ---------------------------------------------------------------------- */
 
     default: {
-      /*
-       * If a custom component contains real children,
-       * render those children.
-       */
       if (component.children?.length) {
         return wrap(
           component.id,
           selectedId,
           onSelect,
-          <div className="flex flex-col gap-4">
+          <div
+            className="flex flex-col"
+            style={{ gap: spacingValues.md }}
+          >
             {children}
           </div>,
         );
       }
 
-      /*
-       * Look for meaningful content.
-       */
       const fallbackTitle =
         stringValue(props.title) ||
         stringValue(props.label) ||
         stringValue(props.subtitle) ||
         stringValue(props.description);
 
-      /*
-       * Empty custom component:
-       * render nothing.
-       */
       if (!fallbackTitle) {
         return null;
       }
 
-      /*
-       * Custom component with actual content.
-       */
       return wrap(
         component.id,
         selectedId,
@@ -1811,9 +1779,7 @@ function RenderNode({
         >
           <p
             className="text-[12px] font-semibold"
-            style={{
-              color: surfaceTextColor,
-            }}
+            style={{ color: surfaceTextColor }}
           >
             {fallbackTitle}
           </p>
@@ -1822,6 +1788,10 @@ function RenderNode({
     }
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* LIST ITEM ROW                                                              */
+/* -------------------------------------------------------------------------- */
 
 function ListItemRow({
   item,
@@ -1833,9 +1803,7 @@ function ListItemRow({
   borderColor,
   isLast,
 }: {
-  item:
-  | GeneratedComponentItem
-  | unknown;
+  item: GeneratedComponentItem | unknown;
   textColor: string;
   mutedColor: string;
   surfaceColor: string;
@@ -1848,9 +1816,13 @@ function ListItemRow({
   const title = itemTitle(item, "Item");
   const subtitle = itemSubtitle(item);
   const amount = itemAmount(item);
-  const tag = stringValue(rec.tag) || stringValue(rec.status) || stringValue(rec.badge);
-  const meta = stringValue(rec.meta);
 
+  const tag =
+    stringValue(rec.tag) ||
+    stringValue(rec.status) ||
+    stringValue(rec.badge);
+
+  const meta = stringValue(rec.meta);
   const amountLooksPositive = amount.startsWith("+");
   const amountLooksNegative = amount.startsWith("-");
 
@@ -1859,9 +1831,7 @@ function ListItemRow({
       className="flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.02]"
       style={{
         backgroundColor: surfaceColor,
-        borderBottom: isLast
-          ? "none"
-          : `1px solid ${borderColor}`,
+        borderBottom: isLast ? "none" : `1px solid ${borderColor}`,
       }}
     >
       <div
@@ -1878,9 +1848,7 @@ function ListItemRow({
         <div className="flex items-center gap-2">
           <p
             className="truncate text-[12px] font-semibold"
-            style={{
-              color: textColor,
-            }}
+            style={{ color: textColor }}
           >
             {title}
           </p>
@@ -1901,9 +1869,7 @@ function ListItemRow({
         {subtitle && (
           <p
             className="mt-0.5 truncate text-[10px]"
-            style={{
-              color: mutedColor,
-            }}
+            style={{ color: mutedColor }}
           >
             {subtitle}
           </p>
@@ -1917,8 +1883,8 @@ function ListItemRow({
             color: amountLooksPositive
               ? "#15803D"
               : amountLooksNegative
-              ? "#DC2626"
-              : textColor,
+                ? "#DC2626"
+                : textColor,
           }}
         >
           {amount}
@@ -1926,9 +1892,7 @@ function ListItemRow({
       ) : meta ? (
         <span
           className="shrink-0 text-[10px]"
-          style={{
-            color: mutedColor,
-          }}
+          style={{ color: mutedColor }}
         >
           {meta}
         </span>
@@ -1949,20 +1913,15 @@ function ActionTile({
   surfaceColor,
   borderColor,
 }: {
-  item:
-  | GeneratedComponentItem
-  | unknown;
+  item: GeneratedComponentItem | unknown;
   primaryColor: string;
   textColor: string;
   mutedColor: string;
   surfaceColor: string;
   borderColor: string;
 }) {
-  const title =
-    itemTitle(item, "Action");
-
-  const subtitle =
-    itemSubtitle(item);
+  const title = itemTitle(item, "Action");
+  const subtitle = itemSubtitle(item);
 
   return (
     <div
@@ -1975,8 +1934,7 @@ function ActionTile({
       <div
         className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl text-sm font-bold"
         style={{
-          backgroundColor:
-            `${primaryColor}15`,
+          backgroundColor: `${primaryColor}15`,
           color: primaryColor,
         }}
       >
@@ -1985,9 +1943,7 @@ function ActionTile({
 
       <p
         className="text-[11px] font-semibold"
-        style={{
-          color: textColor,
-        }}
+        style={{ color: textColor }}
       >
         {title}
       </p>
@@ -1995,9 +1951,7 @@ function ActionTile({
       {subtitle && (
         <p
           className="mt-1 text-[9px] leading-4"
-          style={{
-            color: mutedColor,
-          }}
+          style={{ color: mutedColor }}
         >
           {subtitle}
         </p>
@@ -2025,9 +1979,7 @@ export function DesignRenderer({
     return (
       <div
         className="flex h-full items-center justify-center p-8 text-center"
-        style={{
-          color: tokens.colors.muted,
-        }}
+        style={{ color: tokens.colors.muted }}
       >
         Empty screen — add components via refinement.
       </div>
@@ -2035,21 +1987,42 @@ export function DesignRenderer({
   }
 
   const backgroundColor =
-    tokens.colors.background ||
-    "#F8FAFC";
+    tokens.colors.background || "#F8FAFC";
 
-  const screenIsLight =
-    isLightColor(backgroundColor);
+  const screenIsLight = isLightColor(backgroundColor);
 
-  const textColor =
-    screenIsLight
-      ? "#0F172A"
-      : "#F8FAFC";
+  const textColor = screenIsLight
+    ? "#0F172A"
+    : "#F8FAFC";
 
-  // Check if screen has a single top-level container/grid/stack wrapping the view
+  const findFirstScreenHeading = (
+    components: GeneratedComponent[],
+  ): string | null => {
+    for (const component of components) {
+      const inferredType = inferComponentType(component);
+
+      if (inferredType === "header" || inferredType === "heading") {
+        return component.id;
+      }
+
+      const nested = component.children
+        ? findFirstScreenHeading(component.children)
+        : null;
+
+      if (nested) return nested;
+    }
+
+    return null;
+  };
+
+  const screenTitleComponentId =
+    findFirstScreenHeading(screen.components);
+
   const hasSingleRootLayout =
     screen.components.length === 1 &&
-    ["container", "stack", "grid"].includes(screen.components[0].type);
+    ["container", "stack", "grid"].includes(
+      screen.components[0].type,
+    );
 
   return (
     <div
@@ -2059,28 +2032,30 @@ export function DesignRenderer({
         color: textColor,
       }}
     >
-      <div className="flex-1 overflow-y-auto pb-6">
+      <div className="flex-1 overflow-y-auto pb-6 pt-4">
         {hasSingleRootLayout ? (
           <RenderNode
             component={screen.components[0]}
             tokens={tokens}
             screenState={screen.previewState}
+            screenTitle={screen.title}
+            screenTitleComponentId={screenTitleComponentId}
             selectedId={selectedId}
             onSelect={onSelect}
           />
         ) : (
           <div
             className="flex flex-col"
-            style={{
-              gap: tokens.spacing?.md || "16px",
-            }}
+            style={{ gap: tokens.spacing?.md || "16px" }}
           >
-            {screen.components.map((component) => (
+            {screen.components.map((component, index) => (
               <RenderNode
-                key={component.id}
+                key={`screen-component-${component.id}-${index}`}
                 component={component}
                 tokens={tokens}
                 screenState={screen.previewState}
+                screenTitle={screen.title}
+                screenTitleComponentId={screenTitleComponentId}
                 selectedId={selectedId}
                 onSelect={onSelect}
               />
