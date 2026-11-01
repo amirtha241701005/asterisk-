@@ -26,7 +26,7 @@ export function Canvas() {
 
       {/* Scrollable artboard workspace */}
       <div className="relative min-h-0 flex-1 overflow-auto overscroll-contain">
-        <div className="flex min-h-full min-w-full items-start justify-center px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-8">
+        <div className="flex min-h-full w-max min-w-full items-start justify-center px-4 pb-28 pt-6 sm:px-6 sm:pt-8 lg:px-8">
           <div
             className="shrink-0 origin-top transition-transform duration-200 ease-out"
             style={{

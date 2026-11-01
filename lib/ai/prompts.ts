@@ -1085,6 +1085,26 @@ BAD:
 
 GOOD:
 "October schedule"
+
+==================================================
+ACADEMIC SCREEN COMPLETENESS
+==================================================
+
+When generating a student or academic product, the Assignments & Courses screen MUST be a fully populated working overview, not a placeholder. Include all of the following where relevant:
+
+- a clear screen heading and short context line
+- a visible search or filter control
+- at least 3 realistic course cards, each with course name, instructor or code, and progress
+- a list of at least 4 assignments with title, course, due date, and status or priority
+- a compact summary of upcoming deadlines or completion progress
+- one clear primary action such as \"Add assignment\"
+- meaningful tabs or filters such as All, In Progress, and Completed only when useful
+
+Do not create empty white tiles containing only an initial and the word \"Action\". Every card must communicate a specific academic item or action.
+
+Do not leave the main content area mostly empty when the screen purpose naturally requires course and assignment information. Keep content realistic, scannable, and distinct from the dashboard screen.
+
+For every component with a light background, provide dark foreground text. For every component with a dark background, provide light foreground text. Never use near-white text on white or pale surfaces, or dark text on dark surfaces.
 `
     : `
 
@@ -1389,7 +1409,7 @@ Each screen MUST follow this structure:
   "colorTokens": {},
   "typographyTokens": {},
   "spacingTokens": {},
-  "radius": {},
+  "radius": "12px",
   "components": [
     {
       "id": "component-id",
@@ -1453,30 +1473,53 @@ Return ONLY raw JSON.
 `;
 }
 
-export function buildRefinementPrompt(
+export function classifyRefinementMode(
   instruction: string,
-  currentDesign: unknown,
-): string {
-  const compactDesign = JSON.stringify(currentDesign);
-  const lowerInstruction = instruction.toLowerCase();
+): "targeted" | "visual-redesign" {
+  const text = instruction.toLowerCase();
 
+  // Negated redesign language is a preservation constraint, not a redesign request.
+  const hasNegatedRedesign = /\b(?:do not|don't|dont|never|avoid)\s+(?:fully\s+|visually\s+)?redesign\b/.test(text);
+  const explicitlyTargeted = /\b(change only|only change|keep everything else|keep all other|do not change any other|do not modify any other|preserve all|do not redesign|don't redesign|dont redesign|exactly as they are|rename|change the title|change the heading|change the text|change the colour|change the color|move|reorder)\b/.test(text);
+
+  const positiveRedesignText = text.replace(
+    /\b(?:do not|don't|dont|never|avoid)\s+(?:fully\s+|visually\s+)?redesign\b[^.!?]*/g,
+    " ",
+  );
   const visualRedesignPatterns = [
     /\bvisual redesign\b/,
     /\bredesign\b/,
     /\bmake\b.+\b(premium|polished|professional|modern|beautiful|cleaner)\b/,
     /\bvisual polish\b/,
-    /\bimprove spacing\b/,
-    /\bimprove typography\b/,
-    /\bimprove (the )?(overall )?(visual|design|appearance|look|styling|hierarchy)\b/,
-    /\bcard hierarchy\b/,
+    /\bimprove (the )?(overall )?(visual|design|appearance|look|styling|hierarchy|spacing|typography)\b/,
     /\bmore polished\b/,
     /\bmore premium\b/,
     /\bmodernize\b/,
   ];
 
-  const visualRedesign = visualRedesignPatterns.some((pattern) =>
-    pattern.test(lowerInstruction),
+  const asksForRedesign = visualRedesignPatterns.some((pattern) =>
+    pattern.test(positiveRedesignText),
   );
+
+  if (asksForRedesign && !explicitlyTargeted && !hasNegatedRedesign) {
+    return "visual-redesign";
+  }
+
+  // A clear positive visual request for one named target can still be a redesign,
+  // but preservation instructions for other screens remain binding in the prompt.
+  if (asksForRedesign && hasNegatedRedesign && /\b(this screen|selected screen|current screen|only this screen)\b/.test(text)) {
+    return "visual-redesign";
+  }
+
+  return "targeted";
+}
+
+export function buildRefinementPrompt(
+  instruction: string,
+  currentDesign: unknown,
+): string {
+  const compactDesign = JSON.stringify(currentDesign);
+  const visualRedesign = classifyRefinementMode(instruction) === "visual-redesign";
 
   const modeInstructions = visualRedesign
     ? `
@@ -1486,7 +1529,7 @@ The user expects a visibly improved interface.
 
 Do not return an almost identical design merely because the existing design is valid.
 
-Make meaningful, coordinated improvements to:
+Make meaningful, coordinated improvements to the requested visual properties while preserving the established visual identity. Do not replace a distinctive design with a generic template.
 - typography hierarchy and font sizing
 - spacing and vertical rhythm
 - alignment and grouping
@@ -1500,7 +1543,7 @@ Keep the existing product identity, semantic content, screen IDs, component IDs,
 
 Preserve the current component order unless the user explicitly requests a reorder.
 
-Respect any explicitly protected colors, text, layout, content, or component positions.
+Respect any explicitly protected colors, text, layout, content, or component positions. If the user says not to redesign other screens, leave every other screen unchanged.
 
 When the user asks to preserve a property, do not change that property.
 When the user asks to improve the overall appearance, make meaningful visual changes to the properties that are not protected.
@@ -1524,7 +1567,7 @@ If the user requests a title or text change, update the actual visible component
 
 If the user requests a color change, update the applicable screen color tokens and any explicitly targeted component-level colors so the change appears in the rendered interface.
 
-Do not make unrelated visual changes.
+Do not make unrelated visual changes. Preserve the existing visual character, palette, component variety, and layout strategy unless the user explicitly asks to change them.
 `;
 
   return `

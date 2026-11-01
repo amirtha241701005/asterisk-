@@ -74,7 +74,7 @@ const initialMessages: ChatMessage[] = [
   {
     id: "ai-welcome",
     role: "ai",
-    text: "Describe what you want to design. I'll analyze the brief, research relevant patterns, reason about UX, and generate a multi-screen interface you can refine.",
+    text: "Describe what you want to design. I'll analyze the brief, research relevant patterns, reason about UX, and generate a complete multi-screen interface.",
   },
 ];
 
@@ -576,12 +576,12 @@ export function DesignerProvider({
           components: screen.components.map((component) =>
             component.id === id
               ? {
-                  ...component,
-                  props: {
-                    ...(component.props ?? {}),
-                    ...props,
-                  },
-                }
+                ...component,
+                props: {
+                  ...(component.props ?? {}),
+                  ...props,
+                },
+              }
               : component,
           ),
         }));
@@ -782,6 +782,7 @@ ${applied.design.designDirection.notes}`;
                 body: JSON.stringify(
                   {
                     instruction,
+                    targetScreenId: activeScreenId,
                     design:
                       designData,
                   },
@@ -802,9 +803,40 @@ ${applied.design.designDirection.notes}`;
             );
           }
 
+          // Safety net: a refinement response may contain only the edited
+          // screen. Merge it into the current design before applying anything,
+          // so an incomplete API response can never delete the other screens.
+          const originalScreens = getScreens(designData);
+          const returnedScreens = getScreens(json.data as DesignGenerationOutput);
+          const returnedTarget = returnedScreens.find(
+            (screen) => screen.id === activeScreenId,
+          );
+
+          if (!returnedTarget) {
+            throw new Error(
+              "Refinement did not return the selected screen. Your existing design was kept unchanged.",
+            );
+          }
+
+          const returnedById = new Map(
+            returnedScreens.map((screen) => [screen.id, screen]),
+          );
+          const mergedScreens = originalScreens.map(
+            (screen) => returnedById.get(screen.id) ?? screen,
+          );
+
+          const mergedDesign: DesignGenerationOutput = {
+            ...designData,
+            ...(json.data as DesignGenerationOutput),
+            screens: mergedScreens,
+            screen:
+              mergedScreens.find((screen) => screen.id === activeScreenId) ??
+              mergedScreens[0],
+          };
+
           const applied =
             applyGeneration(
-              json.data,
+              mergedDesign,
             );
 
           setDesignData(

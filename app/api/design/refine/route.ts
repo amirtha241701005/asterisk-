@@ -1,3 +1,5 @@
+export const maxDuration = 250;
+
 import { NextResponse } from "next/server";
 import { refineDesign, AiServiceError } from "@/lib/ai/service";
 import { validateDesignGenerationOutput } from "@/lib/ai/schemas";
@@ -8,6 +10,7 @@ export async function POST(request: Request) {
     const instruction =
       typeof body.instruction === "string" ? body.instruction.trim() : "";
     const currentDesign = body.design;
+    const targetScreenId = typeof body.targetScreenId === "string" ? body.targetScreenId : undefined;
 
     if (!instruction) {
       return NextResponse.json(
@@ -24,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const validated = validateDesignGenerationOutput(currentDesign);
-    const design = await refineDesign(instruction, validated);
+    const design = await refineDesign(instruction, validated, targetScreenId);
 
     return NextResponse.json({ success: true, data: design });
   } catch (error: unknown) {

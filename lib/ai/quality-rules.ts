@@ -15,7 +15,9 @@ export type QualityIssue = {
 const PLACEHOLDER_RE =
   /\b(lorem|ipsum|placeholder|untitled|grid container|example component|generic section|n\/a|todo|tbd|lorem ipsum)\b/i;
 
-const GENERIC_ACTION_RE = /^(action|continue|submit|click me|button)$/i;
+const GENERIC_ACTION_RE = /^(action|continue|submit|click me|button|item|items)$/i;
+
+const GENERIC_VISIBLE_COPY_RE = /^(action|item|items|content|details|section|component|frame|container|placeholder)$/i;
 
 const GENERIC_LABEL_RE =
   /^(section|component|frame|container|content|items|card|header|details|action)$/i;
@@ -44,6 +46,8 @@ function textBlob(component: GeneratedComponent) {
     props.placeholder,
     props.actionText,
     props.emptyText,
+    props.text,
+    props.value,
   ]
     .filter((value): value is string => typeof value === "string")
     .join(" ");
@@ -146,6 +150,43 @@ export function auditDesign(
           id: `generic-name-${component.id}`,
           severity: "medium",
           message: `Generic component name "${component.name}" on ${screen.name}`,
+        });
+      }
+
+      const visibleCopy = [
+        component.name,
+        component.props.title,
+        component.props.label,
+        component.props.actionText,
+        component.props.placeholder,
+        component.props.emptyText,
+        component.props.text,
+        component.props.value,
+      ].filter((value): value is string => typeof value === "string");
+
+      if (visibleCopy.some((value) => GENERIC_VISIBLE_COPY_RE.test(value.trim()))) {
+        issues.push({
+          id: `generic-copy-${component.id}`,
+          severity: "medium",
+          message: `Generic visible copy on ${screen.name}: ${component.name}. Replace it with product-specific wording.`,
+        });
+      }
+
+      // List/grid data is user-visible too; inspect item titles and descriptions.
+      if (Array.isArray(component.props.items)) {
+        component.props.items.forEach((item, itemIndex) => {
+          if (!item || typeof item !== "object") return;
+          const record = item as Record<string, unknown>;
+          for (const field of ["title", "description", "meta", "tag"]) {
+            const value = record[field];
+            if (typeof value === "string" && GENERIC_VISIBLE_COPY_RE.test(value.trim())) {
+              issues.push({
+                id: `generic-item-${component.id}-${itemIndex}-${field}`,
+                severity: "medium",
+                message: `Generic list content on ${screen.name}: ${component.name} item ${itemIndex + 1} has a generic ${field}.`,
+              });
+            }
+          }
         });
       }
 

@@ -57,7 +57,10 @@ function finalizeDesign(
             : blueprint.screens.map((screen) => screen.name),
     },
   };
-  auditDesign(design, blueprint);
+  const qualityIssues = auditDesign(design, blueprint);
+  if (qualityIssues.length) {
+    console.warn("[ARQUO] Design quality findings:", qualityIssues);
+  }
   return design;
 }
 

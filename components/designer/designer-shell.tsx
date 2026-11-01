@@ -22,7 +22,7 @@ function ShellInner() {
   const [wireframeMode, setWireframeMode] = useState(false);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#05060f] text-white">
+    <div className="flex h-dvh w-screen min-h-0 overflow-hidden bg-[#05060f] text-white">
       {/* ------------------------------------------------------------------ */}
       {/* WIREFRAME MODE                                                     */}
       {/* ------------------------------------------------------------------ */}

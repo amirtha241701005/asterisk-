@@ -3,13 +3,14 @@ import {
   buildDesignPrompt,
   buildImprovementPrompt,
   buildQualityPrompt,
-  buildRefinementPrompt,
+  classifyRefinementMode,
   buildUxReasoningPrompt,
 } from "./prompts";
 
 import {
   validateDesignGenerationOutput,
   validateQualityReport,
+  getScreens,
   type DesignGenerationOutput,
   type DesignQualityReport,
   type QualityFinding,
@@ -97,9 +98,9 @@ function generationOptions(mode: CallMode) {
 
     case "refinement":
       return {
-        temperature: 0.15,
-        num_ctx: 16384,
-        num_predict: 10000,
+        temperature: 0.1,
+        num_ctx: 8192,
+        num_predict: 3200,
       };
 
     case "improvement":
@@ -131,8 +132,10 @@ async function callOllamaJson(
   }, OLLAMA_TIMEOUT_MS);
 
   try {
+    const startedAt = Date.now();
     console.log(
       `[ARQUO AI] Ollama request: ${OLLAMA_MODEL} (${mode})`,
+      { promptCharacters: promptText.length, systemCharacters: systemInstruction.length },
     );
 
     const options = generationOptions(mode);
@@ -182,6 +185,11 @@ async function callOllamaJson(
       response?: string;
       done_reason?: string;
       done?: boolean;
+      prompt_eval_count?: number;
+      eval_count?: number;
+      total_duration?: number;
+      prompt_eval_duration?: number;
+      eval_duration?: number;
     };
 
     const rawText = data.message?.content ?? data.response ?? "";
@@ -193,6 +201,12 @@ async function callOllamaJson(
       responseLength: typeof rawText === "string" ? rawText.length : 0,
       doneReason: data.done_reason,
       done: data.done,
+      promptTokens: data.prompt_eval_count,
+      generatedTokens: data.eval_count,
+      totalSeconds: data.total_duration ? Math.round(data.total_duration / 1e9) : undefined,
+      promptSeconds: data.prompt_eval_duration ? Math.round(data.prompt_eval_duration / 1e9) : undefined,
+      generationSeconds: data.eval_duration ? Math.round(data.eval_duration / 1e9) : undefined,
+      wallSeconds: Math.round((Date.now() - startedAt) / 1000),
     });
 
     if (typeof rawText !== "string" || !rawText.trim()) {
@@ -308,174 +322,149 @@ export async function generateDesign(
 function classifyRefinementInstruction(
   instruction: string,
 ): "targeted" | "visual-redesign" {
-  const text = instruction.toLowerCase();
+  return classifyRefinementMode(instruction);
+}
 
-  const targetedPatterns = [
-    /\bchange only\b/,
-    /\bonly change\b/,
-    /\bkeep everything else\b/,
-    /\bkeep all other\b/,
-    /\bdo not change any other\b/,
-    /\bdo not modify any other\b/,
-    /\bpreserve all\b/,
-    /\bexactly as they are\b/,
-    /\brename\b/,
-    /\bchange the title\b/,
-    /\bchange the heading\b/,
-    /\bchange the text\b/,
-    /\bchange the colour\b/,
-    /\bchange the color\b/,
-    /#[0-9a-f]{6}\b/,
-    /\bmove\b.+\b(before|after|above|below)\b/,
-    /\breorder\b/,
-  ];
+type ComponentTreeNode = { id: string; children?: ComponentTreeNode[] };
 
-  const visualRedesignPatterns = [
-    /\bmake\b.+\b(premium|polished|professional|modern|beautiful|cleaner)\b/,
-    /\bvisual redesign\b/,
-    /\bredesign\b/,
-    /\bvisual polish\b/,
-    /\bimprove (the )?(overall )?(visual|design|appearance|look|styling|hierarchy|spacing|typography)\b/,
-    /\bimprove spacing\b/,
-    /\bimprove typography\b/,
-    /\bcard hierarchy\b/,
-    /\bmore polished\b/,
-    /\bmore premium\b/,
-    /\brefine the overall design\b/,
-    /\bmodernize\b/,
-  ];
+function collectComponentIds(components: ComponentTreeNode[]): string[] {
+  return components.flatMap((component) => [
+    component.id,
+    ...collectComponentIds(component.children ?? []),
+  ]);
+}
 
-  const explicitlyTargeted = targetedPatterns.some((pattern) =>
-    pattern.test(text),
-  );
+function buildScreenRefinementPrompt(
+  instruction: string,
+  screen: DesignGenerationOutput["screens"][number],
+  mode: "targeted" | "visual-redesign",
+): string {
+  return `You are ARQUO's UI editor. Edit ONLY the supplied screen.
 
-  const asksForRedesign = visualRedesignPatterns.some((pattern) =>
-    pattern.test(text),
-  );
+USER REQUEST:
+${instruction}
 
-  if (asksForRedesign && !explicitlyTargeted) {
-    return "visual-redesign";
-  }
+MODE: ${mode === "visual-redesign" ? "VISUAL REDESIGN OF THIS SCREEN ONLY" : "TARGETED EDIT OF THIS SCREEN ONLY"}
 
-  return "targeted";
+RULES:
+- Return exactly one JSON object representing the updated screen, not the full app.
+- Preserve this screen's id, name, kind, component IDs, component count, nested component structure and order.
+- Do not add or remove components. Change existing component props and screen-level visual tokens only when needed for the request.
+- For targeted edits, preserve all unrelated content, layout, colours, typography, spacing, radii and hierarchy.
+- For visual redesign, make coordinated visible improvements only within this screen while preserving its identity and component structure.
+- Do not use placeholder labels such as Item, Content, Details, Action or Section when meaningful product-specific content is required.
+- Keep text readable against its actual surface. Preserve intentional light and dark surfaces.
+- Keep all existing required fields. Do not invent unrelated features or screens.
+- Output valid JSON only. No markdown or explanation.
+
+SCREEN JSON:
+${JSON.stringify(screen)}
+`;
 }
 
 export async function refineDesign(
   instruction: string,
   currentDesign: DesignGenerationOutput,
+  targetScreenId?: string,
 ): Promise<DesignGenerationOutput> {
   try {
     const refinementMode = classifyRefinementInstruction(instruction);
+    const screens = getScreens(currentDesign);
+    const targetScreen = targetScreenId
+      ? screens.find((screen) => screen.id === targetScreenId)
+      : screens[0];
 
-    const refinementSystemInstruction =
-      refinementMode === "visual-redesign"
-        ? `
-You are ARQUO's senior product designer performing a visual redesign.
-
-The user has asked for meaningful visual improvement, not merely a metadata edit.
-
-Make deliberate, visible improvements to the existing design:
-- establish a clearer hierarchy between screen titles, section headings, cards, and supporting text
-- improve spacing, alignment, density, and rhythm
-- improve typography scale and weight where needed
-- improve card and list styling, surface contrast, borders, and radii
-- improve the balance and consistency of the screen
-- use the existing design system and requested accent colors
-- remove unnecessary decoration when it weakens clarity
-
-Do not merely restate the existing design or make token-only changes.
-
-Preserve the product's domain, content meaning, existing screen IDs, component IDs, screen count, and screen order.
-Keep component order unchanged unless the user's instruction explicitly asks to change it.
-Do not invent unrelated content, metrics, features, or screens.
-Do not change text content unless needed to fix an obvious placeholder or the user explicitly requests it.
-Keep the changes proportional to the request, but make them visually noticeable.
-
-Return the complete updated design as valid JSON only.
-`.trim()
-        : `
-You are ARQUO's precise UI editing engine.
-
-Apply the user's specific edit to the existing design.
-
-Preserve all screen IDs, component IDs, screen count, screen order, and unrelated content.
-Modify only the properties and component order needed to fulfil the request.
-Do not replace existing screens with different screens.
-Do not remove or add components unless the instruction requires it.
-Do not make unrelated visual changes.
-Keep the content consistent with the product domain.
-Return the complete updated design as valid JSON only.
-`.trim();
-
-    console.log("[ARQUO AI] Refinement mode:", refinementMode);
-
-    const raw = await callOllamaJson(
-      buildRefinementPrompt(instruction, currentDesign),
-      refinementSystemInstruction,
-      "refinement",
-    );
-
-    const validated = validateDesignGenerationOutput(raw);
-
-    const originalScreenIds = currentDesign.screens.map(
-      (screen) => screen.id,
-    );
-
-    const updatedScreenIds = validated.screens.map(
-      (screen) => screen.id,
-    );
-
-    const sameScreenIds =
-      originalScreenIds.length === updatedScreenIds.length &&
-      originalScreenIds.every(
-        (id, index) => id === updatedScreenIds[index],
-      );
-
-    if (!sameScreenIds) {
+    if (!targetScreen) {
       throw new AiServiceError(
-        "The AI attempted to replace or reorder existing screens. Your original design has not been accepted. Try a smaller refinement.",
-        502,
-        "REFINEMENT_CHANGED_SCREEN_STRUCTURE",
+        targetScreenId
+          ? "The selected screen could not be found. Please select it again and retry."
+          : "There is no screen available to refine.",
+        400,
+        "NO_SCREEN_TO_REFINE",
       );
     }
 
-    const originalComponentIds = currentDesign.screens.map((screen) =>
-      screen.components.map((component) => component.id).sort(),
+    console.log("[ARQUO AI] Refinement mode:", refinementMode, {
+      targetScreenId: targetScreen.id,
+      totalScreens: screens.length,
+      strategy: "single-screen",
+    });
+
+    // Ask the local model to regenerate only the active screen. The remaining
+    // screens and all root-level product metadata stay local and untouched.
+    const raw = await callOllamaJson(
+      buildScreenRefinementPrompt(instruction, targetScreen, refinementMode),
+      "Return one updated ARQUO screen object as strict JSON. Do not return the full design.",
+      "refinement",
     );
 
-    const updatedComponentIds = validated.screens.map((screen) =>
-      screen.components.map((component) => component.id).sort(),
+    const candidate = raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+    const returnedScreen = candidate && candidate.screen && typeof candidate.screen === "object"
+      ? candidate.screen
+      : candidate;
+
+    if (!returnedScreen || typeof returnedScreen !== "object") {
+      throw new AiServiceError("The model did not return an updated screen object. Your original design is unchanged.", 502, "INVALID_REFINEMENT_SCREEN");
+    }
+
+    const returned = returnedScreen as Record<string, unknown>;
+    if (returned.id !== targetScreen.id) {
+      throw new AiServiceError("The model changed the target screen identity. Your original design is unchanged.", 502, "REFINEMENT_CHANGED_SCREEN_ID");
+    }
+
+    const originalIds = collectComponentIds(targetScreen.components);
+    const returnedComponents = Array.isArray(returned.components) ? returned.components as ComponentTreeNode[] : [];
+    const returnedIds = collectComponentIds(returnedComponents);
+    if (originalIds.length !== returnedIds.length || originalIds.some((id, index) => id !== returnedIds[index])) {
+      throw new AiServiceError("The model changed the component structure. Your original design is unchanged. Try a more specific edit.", 502, "REFINEMENT_CHANGED_COMPONENT_STRUCTURE");
+    }
+
+    const mergedScreens = screens.map((screen) =>
+      screen.id === targetScreen.id ? returnedScreen : screen,
     );
 
-    const sameComponentIds =
-      originalComponentIds.length === updatedComponentIds.length &&
-      originalComponentIds.every((originalIds, screenIndex) => {
-        const updatedIds = updatedComponentIds[screenIndex];
+    const validated = validateDesignGenerationOutput({
+      ...currentDesign,
+      screens: mergedScreens,
+      screen: undefined,
+    });
 
-        return (
-          originalIds.length === updatedIds.length &&
-          originalIds.every((id, index) => id === updatedIds[index])
-        );
-      });
+    // Guard against a structurally valid response that made no actual change.
+    const updatedTarget = getScreens(validated).find((screen) => screen.id === targetScreen.id);
+    const visibleBefore = JSON.stringify({
+      title: targetScreen.title,
+      subtitle: targetScreen.subtitle,
+      colorTokens: targetScreen.colorTokens,
+      typographyTokens: targetScreen.typographyTokens,
+      spacingTokens: targetScreen.spacingTokens,
+      radius: targetScreen.radius,
+      components: targetScreen.components,
+    });
+    const visibleAfter = updatedTarget ? JSON.stringify({
+      title: updatedTarget.title,
+      subtitle: updatedTarget.subtitle,
+      colorTokens: updatedTarget.colorTokens,
+      typographyTokens: updatedTarget.typographyTokens,
+      spacingTokens: updatedTarget.spacingTokens,
+      radius: updatedTarget.radius,
+      components: updatedTarget.components,
+    }) : "";
 
-    if (!sameComponentIds) {
+    if (!updatedTarget || visibleAfter === visibleBefore) {
       throw new AiServiceError(
-        "The AI changed the existing component set unexpectedly. Your original design has not been accepted. Try a more specific refinement.",
+        "The model returned the screen without making a meaningful change. Your original design is unchanged.",
         502,
-        "REFINEMENT_CHANGED_COMPONENT_STRUCTURE",
+        "REFINEMENT_NO_EFFECT",
       );
     }
 
     return validated;
   } catch (error: unknown) {
-    if (error instanceof AiServiceError) {
-      throw error;
-    }
-
+    if (error instanceof AiServiceError) throw error;
     throw new AiServiceError(
-      error instanceof Error
-        ? error.message
-        : "Refinement could not be validated.",
+      error instanceof Error ? error.message : "Refinement could not be validated.",
       500,
       "SCHEMA_VALIDATION_ERROR",
     );

@@ -15,7 +15,6 @@ import { useDesigner } from "./designer-context";
 
 const actions = [
   { id: "ui", label: "Generate UI", icon: LayoutTemplate },
-  { id: "refine", label: "Refine", icon: Wand2 },
   { id: "persona", label: "Persona", icon: UserRound },
   { id: "flow", label: "User Flow", icon: Workflow },
   { id: "ux", label: "Analyze UX", icon: Sparkles },
@@ -27,7 +26,6 @@ export function AiPanel() {
     prompt,
     setPrompt,
     generateUi,
-    refineDesign,
     createPersona,
     createUserFlow,
     analyzeUx,
@@ -46,7 +44,6 @@ export function AiPanel() {
   function run(id: (typeof actions)[number]["id"]) {
     if (isLoading) return;
     if (id === "ui") generateUi();
-    if (id === "refine") refineDesign(prompt);
     if (id === "persona") createPersona();
     if (id === "flow") createUserFlow();
     if (id === "ux") analyzeUx();
@@ -58,20 +55,20 @@ export function AiPanel() {
       <div className="border-b border-white/8 px-5 py-4">
         <p className="font-display text-lg text-white">AI Designer</p>
         <p className="mt-1 text-[13px] text-white/45">
-          {designData ? "Refine with natural language or regenerate." : "Describe what you want to design."}
+          Describe what you want to design.
         </p>
       </div>
 
       <div className="border-b border-white/8 px-5 py-4">
         <label className="mb-2 block text-[11px] uppercase tracking-[0.16em] text-white/35">
-          {designData ? "Brief or refinement" : "What should we design?"}
+          What should we design?
         </label>
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           disabled={isLoading}
           rows={3}
-          aria-label="Design brief or refinement instruction"
+          aria-label="Design brief"
           placeholder={
             designData
               ? "e.g. Make the CTA more prominent, add an empty state…"
@@ -93,18 +90,17 @@ export function AiPanel() {
             const isPrimary = action.id === "ui";
             const disabled =
               isLoading ||
-              ((action.id === "refine" || action.id === "ux") && !designData);
+              action.id === "ux" && !designData;
             return (
               <button
                 key={action.id}
                 type="button"
                 disabled={disabled}
                 onClick={() => run(action.id)}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                  isPrimary
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isPrimary
                     ? "border-violet-400/40 bg-violet-500/20 text-white hover:bg-violet-500/30"
                     : "border-white/10 bg-white/4 text-white/70 hover:border-violet-400/40 hover:bg-violet-500/15 hover:text-white"
-                }`}
+                  }`}
               >
                 {isPrimary && isLoading ? (
                   <Loader2 size={12} className="animate-spin text-violet-300" />

@@ -82,55 +82,99 @@ function recordValue(
 /* COLOR HELPERS                                                              */
 /* -------------------------------------------------------------------------- */
 
-function hexToRgb(
-  color: string,
-): [number, number, number] | null {
-  const value = color.trim();
+type RGB = [number, number, number];
 
-  if (!value.startsWith("#")) {
+function parseColor(color: string): RGB | null {
+  const value = color.trim().toLowerCase();
+
+  if (value.startsWith("#")) {
+    const hex = value.slice(1);
+
+    if (/^[0-9a-f]{3}$/.test(hex)) {
+      return [
+        parseInt(hex[0] + hex[0], 16),
+        parseInt(hex[1] + hex[1], 16),
+        parseInt(hex[2] + hex[2], 16),
+      ];
+    }
+
+    if (/^[0-9a-f]{6}$/.test(hex)) {
+      return [
+        parseInt(hex.slice(0, 2), 16),
+        parseInt(hex.slice(2, 4), 16),
+        parseInt(hex.slice(4, 6), 16),
+      ];
+    }
+
     return null;
   }
 
-  const hex = value.slice(1);
+  const rgbMatch = value.match(
+    /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*[\d.]+)?\s*\)$/,
+  );
 
-  if (hex.length === 3) {
-    return [
-      parseInt(hex[0] + hex[0], 16),
-      parseInt(hex[1] + hex[1], 16),
-      parseInt(hex[2] + hex[2], 16),
-    ];
-  }
-
-  if (hex.length === 6) {
-    return [
-      parseInt(hex.slice(0, 2), 16),
-      parseInt(hex.slice(2, 4), 16),
-      parseInt(hex.slice(4, 6), 16),
-    ];
+  if (rgbMatch) {
+    const channels = rgbMatch.slice(1, 4).map(Number);
+    if (channels.every((channel) => channel >= 0 && channel <= 255)) {
+      return channels as RGB;
+    }
   }
 
   return null;
 }
 
-function isLightColor(
-  color: string,
-): boolean {
-  const rgb = hexToRgb(color);
+function relativeLuminance(color: string): number | null {
+  const rgb = parseColor(color);
+  if (!rgb) return null;
 
-  if (!rgb) {
-    return true;
+  const channels = rgb.map((channel) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+
+  return (
+    0.2126 * channels[0] +
+    0.7152 * channels[1] +
+    0.0722 * channels[2]
+  );
+}
+
+function isLightColor(color: string): boolean {
+  const luminance = relativeLuminance(color);
+
+  // Unknown CSS formats are treated conservatively as light surfaces.
+  return luminance === null ? true : luminance > 0.62;
+}
+
+function contrastRatio(foreground: string, background: string): number | null {
+  const foregroundLuminance = relativeLuminance(foreground);
+  const backgroundLuminance = relativeLuminance(background);
+
+  if (foregroundLuminance === null || backgroundLuminance === null) {
+    return null;
   }
 
-  const [r, g, b] = rgb.map(
-    (value) => value / 255,
-  );
+  const lighter = Math.max(foregroundLuminance, backgroundLuminance);
+  const darker = Math.min(foregroundLuminance, backgroundLuminance);
 
-  const luminance =
-    0.2126 * r +
-    0.7152 * g +
-    0.0722 * b;
+  return (lighter + 0.05) / (darker + 0.05);
+}
 
-  return luminance > 0.62;
+function readableTextColor(
+  preferredColor: string,
+  backgroundColor: string,
+  fallbackColor: string,
+  minimumContrast = 4.5,
+): string {
+  const ratio = contrastRatio(preferredColor, backgroundColor);
+
+  // If either colour uses an unsupported CSS syntax, use the known-safe
+  // foreground selected for the surface instead of trusting an unknown pair.
+  return ratio !== null && ratio >= minimumContrast
+    ? preferredColor
+    : fallbackColor;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -569,6 +613,9 @@ function RenderNode({
   const surfaceTextColor = isLightColor(surfaceColor)
     ? "#0F172A"
     : "#F8FAFC";
+  const surfaceMutedColor = isLightColor(surfaceColor)
+    ? "#475569"
+    : "#CBD5E1";
 
   const primaryColor = colors.primary || "#6C5CE7";
   const accentColor = colors.accent || primaryColor;
@@ -713,7 +760,7 @@ function RenderNode({
               {props.subtitle && (
                 <p
                   className="mt-1 text-[11px]"
-                  style={{ color: mutedColor }}
+                  style={{ color: surfaceMutedColor }}
                 >
                   {stringValue(props.subtitle)}
                 </p>
@@ -846,8 +893,8 @@ function RenderNode({
           <ListSection
             component={component}
             items={cardItems}
-            textColor={textColor}
-            mutedColor={mutedColor}
+            textColor={surfaceTextColor}
+            mutedColor={surfaceMutedColor}
             surfaceColor={surfaceColor}
             primaryColor={primaryColor}
             accentColor={accentColor}
@@ -995,7 +1042,7 @@ function RenderNode({
           {props.subtitle && (
             <p
               className="mt-1.5 text-[11px] leading-5"
-              style={{ color: mutedColor }}
+              style={{ color: surfaceMutedColor }}
             >
               {stringValue(props.subtitle)}
             </p>
@@ -1058,8 +1105,8 @@ function RenderNode({
         <ListSection
           component={component}
           items={items}
-          textColor={textColor}
-          mutedColor={mutedColor}
+          textColor={surfaceTextColor}
+          mutedColor={surfaceMutedColor}
           surfaceColor={surfaceColor}
           primaryColor={primaryColor}
           accentColor={accentColor}
@@ -1117,8 +1164,8 @@ function RenderNode({
                   key={`grid-item-${index}-${itemTitle(item)}`}
                   item={item}
                   primaryColor={primaryColor}
-                  textColor={textColor}
-                  mutedColor={mutedColor}
+                  textColor={surfaceTextColor}
+                  mutedColor={surfaceMutedColor}
                   surfaceColor={surfaceColor}
                   borderColor={borderColor}
                 />
@@ -1126,9 +1173,9 @@ function RenderNode({
             ) : (
               <div
                 className="col-span-full rounded-2xl border border-dashed p-4 text-center text-xs"
-                style={{ borderColor, color: mutedColor }}
+                style={{ borderColor, color: textColor }}
               >
-                Grid container
+                Add content to this grid
               </div>
             )}
           </div>
@@ -1148,7 +1195,13 @@ function RenderNode({
         <p
           className="px-5"
           style={{
-            color: type === "link" ? primaryColor : mutedColor,
+            color: type === "link"
+              ? readableTextColor(primaryColor, backgroundColor, textColor, 3)
+              : readableTextColor(
+                stringValue(props.color, textColor),
+                backgroundColor,
+                textColor,
+              ),
             fontSize: type === "link" ? fontSizes.body : fontSizes.caption,
             fontWeight: type === "link" ? 600 : 400,
             lineHeight: 1.5,
@@ -1202,7 +1255,7 @@ function RenderNode({
 
             <span
               className="text-[12px]"
-              style={{ color: props.value ? textColor : mutedColor }}
+              style={{ color: props.value ? surfaceTextColor : surfaceMutedColor }}
             >
               {stringValue(
                 props.value,
@@ -1305,7 +1358,7 @@ function RenderNode({
             ) : (
               <p
                 className="text-[11px] leading-relaxed"
-                style={{ color: mutedColor }}
+                style={{ color: surfaceMutedColor }}
               >
                 {stringValue(
                   props.subtitle,
@@ -1353,7 +1406,7 @@ function RenderNode({
             style={{
               backgroundColor: surfaceColor,
               borderColor,
-              color: textColor,
+              color: surfaceTextColor,
             }}
           >
             <span>
@@ -1632,12 +1685,18 @@ function RenderNode({
             }}
           >
             {props.title && (
-              <span className="text-[12px] font-semibold text-white/90">
+              <span
+                className="text-[12px] font-semibold"
+                style={{ color: surfaceTextColor }}
+              >
                 {stringValue(props.title)}
               </span>
             )}
 
-            <span className="mt-1 text-[10px] text-white/60">
+            <span
+              className="mt-1 text-[10px]"
+              style={{ color: surfaceMutedColor }}
+            >
               {stringValue(
                 props.imageHint,
                 stringValue(props.subtitle, "Media Preview"),
@@ -1848,7 +1907,7 @@ function ListItemRow({
         <div className="flex items-center gap-2">
           <p
             className="truncate text-[12px] font-semibold"
-            style={{ color: textColor }}
+            style={{ color: readableTextColor(textColor, surfaceColor, isLightColor(surfaceColor) ? "#0F172A" : "#F8FAFC") }}
           >
             {title}
           </p>
@@ -1869,7 +1928,7 @@ function ListItemRow({
         {subtitle && (
           <p
             className="mt-0.5 truncate text-[10px]"
-            style={{ color: mutedColor }}
+            style={{ color: readableTextColor(mutedColor, surfaceColor, isLightColor(surfaceColor) ? "#475569" : "#CBD5E1", 4.5) }}
           >
             {subtitle}
           </p>
@@ -1884,7 +1943,7 @@ function ListItemRow({
               ? "#15803D"
               : amountLooksNegative
                 ? "#DC2626"
-                : textColor,
+                : readableTextColor(textColor, surfaceColor, isLightColor(surfaceColor) ? "#0F172A" : "#F8FAFC"),
           }}
         >
           {amount}
@@ -1892,7 +1951,7 @@ function ListItemRow({
       ) : meta ? (
         <span
           className="shrink-0 text-[10px]"
-          style={{ color: mutedColor }}
+          style={{ color: readableTextColor(mutedColor, surfaceColor, isLightColor(surfaceColor) ? "#475569" : "#CBD5E1", 4.5) }}
         >
           {meta}
         </span>
@@ -1943,7 +2002,7 @@ function ActionTile({
 
       <p
         className="text-[11px] font-semibold"
-        style={{ color: textColor }}
+        style={{ color: readableTextColor(textColor, surfaceColor, isLightColor(surfaceColor) ? "#0F172A" : "#F8FAFC") }}
       >
         {title}
       </p>
@@ -1951,7 +2010,7 @@ function ActionTile({
       {subtitle && (
         <p
           className="mt-1 text-[9px] leading-4"
-          style={{ color: mutedColor }}
+          style={{ color: readableTextColor(mutedColor, surfaceColor, isLightColor(surfaceColor) ? "#475569" : "#CBD5E1", 4.5) }}
         >
           {subtitle}
         </p>
@@ -2026,7 +2085,7 @@ export function DesignRenderer({
 
   return (
     <div
-      className="flex h-full flex-col overflow-hidden"
+      className="absolute inset-0 flex flex-col overflow-hidden"
       style={{
         backgroundColor,
         color: textColor,
